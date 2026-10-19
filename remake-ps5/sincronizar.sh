@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# Copia Yugioh Classic Remaster (la carpeta remake-ps5 de una rama) a su propia plantilla Vulkan dentro del
+# contenedor arch-ps5 (/work/PS5_ClassicRemaster, titulo PPSA77002: nunca pisa a Yugi Reload, PPSA77001), aplica
+# los arreglos a la base (parche_base.py) y compila los shaders.
+# Uso: YUGI_SRC=/compartido/wt/<rama>/remake-ps5 bash sincronizar.sh
+set -euo pipefail
+# YUGI_SRC: carpeta remake-ps5 a compilar; YUGI_ASSETS: los assets que no van al repo (caras de cartas, fx, bosque)
+src=${YUGI_SRC:?YUGI_SRC=/compartido/wt/<rama>/remake-ps5}
+assets=${YUGI_ASSETS:-/compartido/classic-assets}
+t=/work/PS5_ClassicRemaster
+grep -q '"titleId": "PPSA77002"' "$t/ps5/sce_sys/param.json" || { echo "la plantilla $t no es PPSA77002: se detiene"; exit 1; }
+# 120 Hz: el driver (PS5_Vulkan/driver/ps5vk_wsi.c) ofrece el modo de 119.88 Hz a 3840x2160 solo si el titulo lo
+# declara en param.json (attribute3, bits 0x80040); sin eso la consola lo rechaza y queda 59.94 Hz. La tele tiene que
+# aceptar 4K a 120 Hz (HDMI 2.1); si no, VideoOut lo rechaza y el driver vuelve solo a 60 Hz
+python3 - "$t/ps5/sce_sys/param.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["attribute3"] = int(d.get("attribute3", 0)) | 0x80040
+d["localizedParameters"]["en-US"]["titleName"] = "Yugioh Classic Remaster"
+json.dump(d, open(p, "w"), indent=2)
+PY
+cp "$src/src/yugireload.cpp" "$t/examples/yugireload/yugireload.cpp"
+# interfaz del duelo (HUD): su codigo y stb_truetype (texto SDF)
+cp "$src/src/interfaz.h" "$t/examples/yugireload/interfaz.h"
+# el control con el mando: mesa, foco, menus y eventos, sin Vulkan
+cp "$src/src/control.h" "$t/examples/yugireload/control.h"
+# textos ES/EN de la interfaz e idioma elegido (rama classic-idioma)
+if [[ -f "$src/src/idioma.h" ]]; then cp "$src/src/idioma.h" "$t/examples/yugireload/idioma.h"; fi
+# rama classic-constructor: coleccion y mazo (mazo.h), la pantalla "Construir mazo" (constructor.h, constructor_ui.h) y
+# sus ganchos en el duelo (mazo_duelo.h); rama classic-integracion: el duelo real contra la IA (duelo_juego.h, duelo_ui.h)
+cp "$src/src/figuras.h" "$t/examples/yugireload/figuras.h"   # rama classic-figuras
+for h in mazo.h constructor.h constructor_textos.h constructor_ui.h mazo_duelo.h duelo_juego.h duelo_ui.h; do cp "$src/src/$h" "$t/examples/yugireload/$h"; done
+# carta de campo Bosque: el entorno de bosque hecho por codigo
+cp "$src/src/bosque.h" "$t/examples/yugireload/bosque.h"
+# rama classic-entornos: el entorno del personaje rival (fondo, suelo, luz, siluetas y particulas)
+cp "$src/src/entornos.h" "$t/examples/yugireload/entornos.h"
+# rama classic-campos: las cartas de campo cambian el escenario (capa del tablero y particulas)
+cp "$src/src/campos.h" "$t/examples/yugireload/campos.h"
+# efectos del Niagara Examples Pack horneados a flipbook: el sistema de billboards
+cp "$src/src/fx.h" "$t/examples/yugireload/fx.h"
+# rama classic-fx-md: animaciones de activacion de magias/trampas, dado y moneda (efectos_cartas.h)
+cp "$src/src/efectos_cartas.h" "$t/examples/yugireload/efectos_cartas.h"
+# rama classic-ia: la IA del rival (motor del duelo sin efectos, personalidades y rivales.txt)
+cp "$src/src/ia.h" "$t/examples/yugireload/ia.h"
+# rama classic-variedad: planes de juego, mazos dinamicos, memoria del jugador y dificultad adaptable
+if [[ -f "$src/src/ia_plan.h" ]]; then cp "$src/src/ia_plan.h" "$t/examples/yugireload/ia_plan.h"; fi
+# rama classic-personajes: personajes del anime (modo historia) y sus retratos
+for h in personajes.h personajes_ui.h; do if [[ -f "$src/src/$h" ]]; then cp "$src/src/$h" "$t/examples/yugireload/$h"; fi; done
+cp "$src/third_party/stb_truetype.h" "$t/examples/yugireload/stb_truetype.h"
+# rama classic-audio: el mezclador (audio.h) y el decodificador de OGG (stb_vorbis, dominio publico)
+cp "$src/src/audio.h" "$src/third_party/stb_vorbis.c" "$t/examples/yugireload/"
+rm -rf "$t/examples/yugireload/reglas" "$t/examples/yugireload/escena.h" "$t/examples/yugireload/prueba_cartesiana.h"
+rm -f "$t"/shaders/glsl/yugireload/*
+cp "$src"/shaders/*.vert "$src"/shaders/*.frag "$t/shaders/glsl/yugireload/"
+for s in "$t"/shaders/glsl/yugireload/*.vert "$t"/shaders/glsl/yugireload/*.frag; do
+    glslangValidator -V --target-env vulkan1.3 "$s" -o "$s.spv" > /tmp/glslang.log || { cat /tmp/glslang.log; exit 1; }
+done
+# arreglos a la base: .glb binarios, fotos y video de la consola a pedido, OPTIONS 2 s, nombre de la ventana
+cp "$src/third_party/stb_image_write.h" "$t/ps5/src/stb_image_write.h"
+python3 "$src/parche_base.py" "$t"
+# el tablero (tapete y casillas), dos primitivas para los destellos (esfera y cilindro) y, rama classic-figuras, las
+# figuras 3D de las cartas emblematicas (<assets>/models/yugi/<slug>.glb y <slug>_anim.glb, no van al repo; la tabla
+# id -> slug es datos/figuras.txt). rsync: solo copia las que cambiaron
+mkdir -p "$t/ps5/assets/models/yugi" "$assets/models/yugi"
+rsync -a --delete --include='*.glb' --exclude='*' "$assets/models/yugi/" "$t/ps5/assets/models/yugi/"
+cp "$assets"/models/tablero.glb "$assets"/models/esfera.glb "$assets"/models/rayo.glb "$t/ps5/assets/models/yugi/"
+# interfaz: caras de las cartas y sus datos (no van al repo) y las fuentes libres (OFL, en el repo)
+# las caras son ~3 GB: rsync solo copia las que cambiaron (antes rm + cp tardaba 12 min en cada compilacion)
+mkdir -p "$t/ps5/assets/ui/fuentes"
+rsync -a --delete --include='*.png' --include='cara_hd_*.jpg' --include='cartas_ui.txt' --exclude='*' "$assets/ui/" "$t/ps5/assets/ui/"
+# caras en HD (cara_hd_<id>.jpg, del agente classic-datos): el juego las prefiere a cara_<id>.png y les arma mipmaps
+if [[ -f "$assets/ui/cartas_ui_en.txt" ]]; then cp "$assets/ui/cartas_ui_en.txt" "$t/ps5/assets/ui/"; fi   # textos en ingles (classic-idioma)
+if [[ -f "$assets/ui/cartas_classic.txt" ]]; then cp "$assets/ui/cartas_classic.txt" "$t/ps5/assets/ui/"; fi   # limites Goat (classic-constructor)
+cp "$src"/third_party/fuentes/* "$t/ps5/assets/ui/fuentes/"
+# carta de campo Bosque realista: texturas (png) y modelos reducidos (.malla) CC0 de Poly Haven y ambientCG; los
+# prepara bosque_insumos.py (no van al repo). Sin ellos el bosque sale con texturas neutras
+# entornos por rival: texturas CC0 de Poly Haven (entornos_insumos.py, no van al repo). Sin ellas, texturas neutras
+mkdir -p "$t/ps5/assets/entornos"
+if ls "$assets"/entornos/*_color.png > /dev/null 2>&1; then
+    # rama classic-escenarios: los fondos pre-renderizados (pano/<clave>.jpg, _prof.png y .txt; escenarios/*.py)
+    rsync -a --delete --exclude='pano/*_vista.png' --include='pano/' --include='pano/*.jpg' --include='pano/*_prof.png' --include='pano/*.txt' --include='*.png' --exclude='*'         "$assets/entornos/" "$t/ps5/assets/entornos/"
+else
+    echo "aviso: faltan las texturas de los entornos en $assets/entornos (correr entornos_insumos.py)"
+fi
+# rama classic-fondos: un fondo fotorrealista por personaje (fondos/<id>.jpg, _prof.png y .txt: cola_fondos.py y
+# fondos_post.py, no van al repo) y su tabla (datos/fondos.txt, en el repo). Sin el fondo de un personaje queda el de su tema
+mkdir -p "$t/ps5/assets/fondos" "$assets/fondos"
+rsync -a --delete --include='*.jpg' --include='*_prof.png' --include='*.txt' --exclude='*' "$assets/fondos/" "$t/ps5/assets/fondos/"
+cp "$src/datos/fondos.txt" "$t/ps5/assets/ui/"
+# rama classic-campos: texturas CC0 de Poly Haven del tablero de cada carta de campo (campos_insumos.py, no van al repo)
+mkdir -p "$t/ps5/assets/campos"
+if ls "$assets"/campos/*_color.png > /dev/null 2>&1; then
+    rsync -a --delete --include='*.png' --exclude='*' "$assets/campos/" "$t/ps5/assets/campos/"
+else
+    echo "aviso: faltan las texturas de las cartas de campo en $assets/campos (correr campos_insumos.py)"
+fi
+rm -rf "$t/ps5/assets/bosque" && mkdir -p "$t/ps5/assets/bosque"
+if ls "$assets"/bosque/*_color.png > /dev/null 2>&1; then
+    cp "$assets"/bosque/*.png "$t/ps5/assets/bosque/"
+    cp "$assets"/bosque/*.malla "$t/ps5/assets/bosque/" 2> /dev/null || true
+else
+    echo "aviso: faltan los insumos del bosque en $assets/bosque (correr bosque_insumos.py)"
+fi
+# efectos del Niagara Examples Pack (Fab) horneados (herramientas/unreal/hornear_niagara.bat, no van al repo): atlas
+# png + json. Sin ellos no hay explosiones ni chispas del pack
+rm -rf "$t/ps5/assets/fx" && mkdir -p "$t/ps5/assets/fx/pack"
+if ls "$assets"/fx/*.json > /dev/null 2>&1; then
+    cp "$assets"/fx/*.png "$assets"/fx/*.json "$t/ps5/assets/fx/"
+    cp "$assets"/fx/pack/*.png "$assets"/fx/pack/*.json "$t/ps5/assets/fx/pack/" 2> /dev/null || true
+    echo "efectos del pack: $(ls "$t"/ps5/assets/fx/*.json "$t"/ps5/assets/fx/pack/*.json 2> /dev/null | wc -l) flipbooks"
+else
+    echo "aviso: faltan los efectos horneados en $assets/fx (herramientas/unreal/hornear_niagara.bat)"
+fi
+# rama classic-ia: los 40 rivales y sus 120 mazos (rivales_gen.py)
+if [[ -f "$src/datos/rivales.txt" ]]; then cp "$src/datos/rivales.txt" "$t/ps5/assets/ui/"; fi
+for f in roles_cartas.txt combos.txt; do if [[ -f "$src/datos/$f" ]]; then cp "$src/datos/$f" "$t/ps5/assets/ui/"; fi; done   # rama classic-variedad
+# rama classic-figuras: id de carta emblematica -> slug de su figura 3D (emblematicas_gen.py)
+if [[ -f "$src/datos/figuras.txt" ]]; then cp "$src/datos/figuras.txt" "$t/ps5/assets/ui/"; fi
+# rama classic-fx-md: efectos de Master Duel (copia del usuario, herramientas/fx_md, no van al repo): flipbooks horneados
+# (fx/md), el dado y la moneda 3D (models/yugi) con sus curvas (fx/md); y la tabla carta -> efecto (en el repo)
+cp "$src/datos/efectos_cartas.txt" "$t/ps5/assets/ui/"
+md="${YUGI_FX_MD:-$assets/fx_master_duel}"
+mkdir -p "$t/ps5/assets/fx/md"
+if ls "$md"/horneado/*.json > /dev/null 2>&1; then
+    cp "$md"/horneado/*.png "$md"/horneado/*.json "$t/ps5/assets/fx/md/"
+    cp "$md"/dado_moneda/dado_md.txt "$md"/dado_moneda/moneda_md.txt "$t/ps5/assets/fx/md/" 2> /dev/null || true
+    cp "$md"/dado_moneda/dado_md.glb "$md"/dado_moneda/moneda_md.glb "$t/ps5/assets/models/yugi/" 2> /dev/null || true
+    echo "efectos de Master Duel: $(ls "$t"/ps5/assets/fx/md/*.json | wc -l) flipbooks"
+else
+    echo "aviso: faltan los efectos de Master Duel en $md (herramientas/fx_md): solo la activacion por codigo"
+fi
+# rama classic-personajes: los 47 personajes y sus mazos (personajes_gen.py) y los retratos (retratos_post.py, no van
+# al repo: <assets>/personajes/retrato_<id>.png)
+for f in personajes.txt personajes_rivales.txt; do if [[ -f "$src/datos/$f" ]]; then cp "$src/datos/$f" "$t/ps5/assets/ui/"; fi; done
+mkdir -p "$t/ps5/assets/personajes" "$assets/personajes"
+rsync -a --delete --include='retrato_*.png' --exclude='*' "$assets/personajes/" "$t/ps5/assets/personajes/"
+# rama classic-audio: musica (ogg) y efectos (wav) + audio.txt, sacados de la copia de Master Duel del usuario
+# (herramientas/audio, no van al repo). YUGI_AUDIO: su carpeta; sin ella el juego queda mudo
+audio=${YUGI_AUDIO:-/compartido/classic-assets/audio}
+[[ -f "$audio/audio.txt" ]] || audio="$assets/audio"
+rm -rf "$t/ps5/assets/audio" && mkdir -p "$t/ps5/assets/audio"
+if [[ -f "$audio/audio.txt" ]]; then
+    cp "$audio"/audio.txt "$t/ps5/assets/audio/"
+    cp "$audio"/*.wav "$audio"/*.ogg "$t/ps5/assets/audio/" 2> /dev/null || true
+    echo "audio: $(ls "$t"/ps5/assets/audio | wc -l) archivos ($(du -sh "$t/ps5/assets/audio" | cut -f1))"
+else
+    echo "# sin audio" > "$t/ps5/assets/audio/audio.txt"
+    echo "aviso: falta el audio en $audio (el juego queda mudo)"
+fi
+python3 - "$t/ps5/assets.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["assets"] = [a for a in d["assets"] if a["path"] not in ("models/ps5/lantern", "models/yugi", "ui", "bosque", "fx", "personajes", "audio", "entornos", "fondos", "campos")]
+d["assets"].append({"path": "personajes", "from": "file", "source": "ps5/assets/personajes",
+    "used_by": ["yugireload"], "title": "Retratos de los personajes rivales (modo historia)",
+    "author": "Yugi Reload (uso personal)", "licence": "Uso personal", "url": "-"})
+d["assets"].append({"path": "audio", "from": "file", "source": "ps5/assets/audio",
+    "used_by": ["yugireload"], "title": "Musica y efectos de sonido del duelo",
+    "author": "Konami (Yu-Gi-Oh! Master Duel, copia del usuario)", "licence": "Uso personal, sin distribucion",
+    "url": "-"})
+d["assets"].append({"path": "fx", "from": "file", "source": "ps5/assets/fx",
+    "used_by": ["yugireload"], "title": "Efectos del Niagara Examples Pack horneados a flipbook (explosiones, chispas...)",
+    "author": "Epic Games (Niagara Examples Pack, Fab); horneado: Yugi Reload", "licence": "Fab Standard License",
+    "url": "https://www.fab.com/"})
+d["assets"].append({"path": "fondos", "from": "file", "source": "ps5/assets/fondos",
+    "used_by": ["yugireload"], "title": "Fondos fotorrealistas por personaje (matte paintings generados con Gemini, escalados con Real-ESRGAN)",
+    "author": "Yugi Reload (generados con Gemini); pruebas: Poly Haven (CC0)", "licence": "Uso personal", "url": "-"})
+d["assets"].append({"path": "entornos", "from": "file", "source": "ps5/assets/entornos",
+    "used_by": ["yugireload"], "title": "Entornos por rival: piedra, adoquin, arenisca, arena, metal, marmol, ladrillo, hormigon, roca, madera...",
+    "author": "Poly Haven (Rob Tuytel, Dimitrios Savva y otros)", "licence": "CC0-1.0", "url": "https://polyhaven.com/"})
+d["assets"].append({"path": "campos", "from": "file", "source": "ps5/assets/campos",
+    "used_by": ["yugireload"], "title": "Tablero de las cartas de campo: cesped, roca, tierra agrietada, pizarra, arena, losas, marmol, metal...",
+    "author": "Poly Haven (Rob Tuytel, Dimitrios Savva y otros)", "licence": "CC0-1.0", "url": "https://polyhaven.com/"})
+d["assets"].append({"path": "bosque", "from": "file", "source": "ps5/assets/bosque",
+    "used_by": ["yugireload"], "title": "Bosque de la carta de campo: corteza, suelo, follaje y modelos escaneados",
+    "author": "Poly Haven (Rob Tuytel, Rico Cilliers y otros) y ambientCG (Lennart Demes)", "licence": "CC0-1.0",
+    "url": "https://polyhaven.com/ ; https://ambientcg.com/"})
+d["assets"].append({"path": "ui", "from": "file", "source": "ps5/assets/ui",
+    "used_by": ["yugireload"], "title": "Interfaz del duelo: caras de cartas, datos y fuentes (Chakra Petch, Rajdhani)",
+    "author": "Yugi Reload; fuentes: The Chakra Petch Project Authors, Indian Type Foundry", "licence": "Uso personal; fuentes OFL-1.1",
+    "url": "https://github.com/google/fonts/tree/main/ofl"})
+d["assets"].append({"path": "models/yugi", "from": "file", "source": "ps5/assets/models/yugi",
+    "used_by": ["yugireload"], "title": "Tablero de Yugioh Classic Remaster y figuras 3D de las cartas emblematicas",
+    "author": "Yugi Reload (proyecto personal: Blender)", "licence": "Uso personal",
+    "url": "-"})
+json.dump(d, open(p, "w"), indent=2, ensure_ascii=False)
+PY
+if [[ -f "$assets/sce_sys/icon0.png" ]]; then cp "$assets/sce_sys/icon0.png" "$t/ps5/sce_sys/icon0.png"; fi   # (no va al repo)
+echo "sincronizado en $t"

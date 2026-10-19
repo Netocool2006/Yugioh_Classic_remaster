@@ -1,0 +1,6 @@
+# cartas_extra.txt - cartas fuera de las 1690 Goat que se anaden al constructor sin duenno (no son firma de personaje).
+# nombre TCG|limite|nota   (las lee preparar_classic.py)
+# Zera the Mant: en el manga/anime solo sale como personaje del juego de rol Monster World (no la usa nadie en un
+# duelo), asi que va como carta extra, sin duenno. Su ritual, Zera Ritual, tambien.
+Zera the Mant|3|ritual de Zera Ritual
+Zera Ritual|3|magia de ritual de Zera the Mant

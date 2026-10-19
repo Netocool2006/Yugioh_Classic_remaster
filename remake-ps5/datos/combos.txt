@@ -1,0 +1,28 @@
+# combos.txt - combos conocidos que la IA sabe ejecutar y que los mazos dinamicos meten juntos (rama classic-variedad;
+# lo lee ia::Base::leerVariedad, lo usa src/ia_plan.h). A mano.
+# C|clave|pieza pieza ...|minimo|plan
+#   pieza: id de carta, @papel (letra de roles_cartas.txt), %subtipo (cartas_classic.txt) o &raza (monstruo)
+#   minimo: cuantas piezas distintas tiene que tener a mano (mano + campo propio boca arriba) para que la IA lo busque
+#   plan: agresivo control bloqueo enjambre combo castigo molino tempo alternativa (el plan que lo mete en el mazo)
+C|espadas_quema|swords_of_revealing_light @q|2|bloqueo
+C|gravedad_quema|gravity_bind @q|2|bloqueo
+C|mensajero_muros|messenger_of_peace @w|2|bloqueo
+C|nivel_b_quema|level_limit_area_b @q|2|bloqueo
+C|cuenta_atras|final_countdown swords_of_revealing_light scapegoat gravity_bind messenger_of_peace waboku|2|alternativa
+C|tablero_destino|destiny_board spirit_message_i spirit_message_n spirit_message_a spirit_message_l|1|alternativa
+C|exodia|exodia_the_forbidden_one left_arm_of_the_forbidden_one right_arm_of_the_forbidden_one left_leg_of_the_forbidden_one right_leg_of_the_forbidden_one pot_of_greed graceful_charity upstart_goblin|3|alternativa
+C|soldado_negro|black_luster_ritual black_luster_soldier|2|combo
+C|mundo_toon|toon_world %toon|2|combo
+C|limitador|limiter_removal &Máquina|2|combo
+C|xyz|x_head_cannon y_dragon_head z_metal_tank|2|combo
+C|ofrenda_prestada|change_of_heart snatch_steal brain_control creature_swap|1|tempo
+C|cilindro_muro|magic_cylinder @w|2|castigo
+C|espejo|mirror_force sakuretsu_armor trap_hole bottomless_trap_hole torrential_tribute|1|castigo
+C|reclutas|giant_rat mystic_tomato shining_angel pyramid_turtle|1|enjambre
+C|cabras|scapegoat @e|1|enjambre
+C|gusanos|needle_worm morphing_jar card_destruction|1|molino
+C|tormenta|heavy_storm mystical_space_typhoon harpie_s_feather_duster dust_tornado|1|control
+C|agujero_muros|dark_hole raigeki @w|2|control
+C|hermanas_harpia|harpie_lady harpie_lady_sisters elegant_egotist|2|enjambre
+C|magos|dark_magician thousand_knives|2|combo
+C|equipo_golpe|@g @k|2|agresivo

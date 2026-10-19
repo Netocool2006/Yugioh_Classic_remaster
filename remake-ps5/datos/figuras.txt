@@ -1,0 +1,11 @@
+# figuras.txt - generado por emblematicas_gen.py: id de carta -> slug del modelo 3D (models/yugi/<slug>.glb,
+# <slug>_anim.glb si tiene esqueleto). Solo las emblematicas: las demas cartas siguen planas
+baby_dragon baby_dragon
+blue_eyes blue_eyes
+celtic_guardian celtic_guardian
+dark_magician dark_magician
+dark_magician_girl dark_magician_girl
+kuriboh kuriboh
+red_eyes red_eyes
+silver_fang silver_fang
+summoned_skull summoned_skull
