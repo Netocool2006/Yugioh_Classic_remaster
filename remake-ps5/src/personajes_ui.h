@@ -175,6 +175,7 @@ private:
 		boton("X", "Duelo");
 		boton("T", "Duelo libre");
 		boton(idioma::tr("TÁCTIL"), "Construir mazo");
+		boton("O", "Volver");   // rama classic-menus: al menu principal
 	}
 
 	// ---- RESULTADO: lo que trae vencer a un personaje (debajo del titulo)

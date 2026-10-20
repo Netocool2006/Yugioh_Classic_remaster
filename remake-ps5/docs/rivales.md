@@ -73,3 +73,31 @@ Contra el mismo rival cada duelo se siente distinto:
   medio hasta +280 sobre el de sus mazos; con racha -: mas ruido (hasta x1.42), menos planes de castigo/control/bloqueo
   y ATK medio algo menor. Nunca cambia el nivel del rival ni su pool. Apagada: todo como con racha 0.
 - Prueba: `src/pruebas/prueba_variedad.cpp` (validez de los mazos, diversidad, nivel, lectura, adaptable, memoria).
+
+## IA humana (rama classic-ia-humana, `src/ia_humana.h`)
+
+Opciones → **IA: Clásica / Humana** (por defecto Humana; `humana 1|0` en `variedad.txt`). La clásica es el Cerebro
+de siempre. La humana usa el mismo Cerebro como política y le suma dos capas:
+
+1. **Búsqueda que imagina jugadas** (Monte Carlo con determinización). En cada decisión no obvia (invocar/colocar,
+   atacar y a quién, activar, responder) toma las 4-7 mejores candidatas de la política (con el plan ya sumado) y
+   siempre "pasar"; copia el `Duelo` y adivina lo oculto del jugador (mano, orden del mazo y lo boca abajo salen de sus
+   cartas no vistas; lo boca abajo es más probablemente trampa si el jugador es "trampero", menos si es "farolero" y
+   menos tras cada ataque propio sin castigo); juega la candidata y sigue 1-2 turnos con la política de `ia.h` (el
+   jugador simulado se arma con su lectura); evalúa con el plan (agresivo: daño; control/bloqueo: ventaja de cartas;
+   orgullo de Kaiba: tener el monstruo más fuerte). Rondas con la misma semilla para todas las candidatas y poda de las
+   que quedan atrás. Presupuesto por decisión: **80-150 ms** y **60-170 simulaciones** según nivel, dificultad adaptable
+   y "vista" del personaje. En el juego corre **por pedazos de 4 ms por cuadro** (el indicador "pensando" sigue
+   encendido); nunca en otro hilo, así no toca el motor desde dos lados.
+2. **Capa humana**: faroles (magias boca abajo para frenar ataques; más si el jugador ataca con todo o limpia las boca
+   abajo), callar una trampa marginal con LP de sobra, guardar la trampa para el ataque grande si el jugador ataca con
+   todo, errores creíbles, pocos desde el nivel 1 (~1,5 %; ~1,15 % en el 8; la personalidad y la dificultad adaptable solo los mueven un poco, y la adaptable baja como mucho a -1) (no ver un combo raro, sobrevalorar el ataque yendo ganando, arriesgar yendo perdiendo,
+   quedarse con la segunda), tiempo de pensar visible según la dificultad de la posición (lo ya pensado se descuenta;
+   corre con el dt escalado por la velocidad de animaciones) y **rasgos** por personaje (`RASGOS_PERSONAJES`: riesgo,
+   orgullo, lectura, farol, error, vista, pausa) o por personalidad para los genéricos.
+   Memoria nueva: `Lectura::limpia` (cuánto destruye el jugador las boca abajo), 8º número de la línea `jugador`.
+
+Medición (`src/pruebas/prueba_ia_humana.cpp`, 200 duelos humana contra clásica con los mismos mazos, cada IA juega
+los dos rivales de cada par del MISMO nivel, cada IA juega cada mazo una vez; 19-oct-2026, tras "fuerte desde el nivel 1"): la humana gana el 68,5 % (137-63) y le gana a la clásica en todos los niveles (n1 73 %, n2 73 %, n3 69 %, n4 69 %, n5 66 %, n6 70 %, n7 58 %, n8 66 %), 35,5 ms de media por decisión imaginada (96 simulaciones), máximo 146 ms, errores creíbles 0,7 %, 0 jugadas ilegales; la prueba falla si la humana gana menos del 55 %, si hay jugadas
+ilegales o si una decisión pasa de 175 ms. Variables de afinado: `DEPURA`, `KPRIOR`, `HORIZONTE`, `WCARTAS`,
+`NIVELSIM`, `OBVIA`, `SIN_DIVERSIDAD`.

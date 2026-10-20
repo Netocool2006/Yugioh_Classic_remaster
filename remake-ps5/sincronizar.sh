@@ -30,7 +30,8 @@ if [[ -f "$src/src/idioma.h" ]]; then cp "$src/src/idioma.h" "$t/examples/yugire
 # rama classic-constructor: coleccion y mazo (mazo.h), la pantalla "Construir mazo" (constructor.h, constructor_ui.h) y
 # sus ganchos en el duelo (mazo_duelo.h); rama classic-integracion: el duelo real contra la IA (duelo_juego.h, duelo_ui.h)
 cp "$src/src/figuras.h" "$t/examples/yugireload/figuras.h"   # rama classic-figuras
-for h in mazo.h constructor.h constructor_textos.h constructor_ui.h mazo_duelo.h duelo_juego.h duelo_ui.h; do cp "$src/src/$h" "$t/examples/yugireload/$h"; done
+for h in mazo.h constructor.h constructor_textos.h constructor_ui.h mazo_duelo.h duelo_juego.h duelo_ui.h menu_principal.h menu_ui.h guardado.h portada.h portada_ui.h opciones.h; do cp "$src/src/$h" "$t/examples/yugireload/$h"; done
+for h in duelo_registro.h duelo_cadena.h duelo_visores.h duelo_consulta.h duelo_consulta_ui.h; do cp "$src/src/$h" "$t/examples/yugireload/$h"; done   # rama classic-duelo-ui
 # carta de campo Bosque: el entorno de bosque hecho por codigo
 cp "$src/src/bosque.h" "$t/examples/yugireload/bosque.h"
 # rama classic-entornos: el entorno del personaje rival (fondo, suelo, luz, siluetas y particulas)
@@ -41,12 +42,22 @@ cp "$src/src/campos.h" "$t/examples/yugireload/campos.h"
 cp "$src/src/fx.h" "$t/examples/yugireload/fx.h"
 # rama classic-fx-md: animaciones de activacion de magias/trampas, dado y moneda (efectos_cartas.h)
 cp "$src/src/efectos_cartas.h" "$t/examples/yugireload/efectos_cartas.h"
+# rama classic-probador: la logica de esas animaciones (sin Vulkan: la usa tambien el probador de PC)
+cp "$src/src/efectos_logica.h" "$t/examples/yugireload/efectos_logica.h"
 # rama classic-ia: la IA del rival (motor del duelo sin efectos, personalidades y rivales.txt)
 cp "$src/src/ia.h" "$t/examples/yugireload/ia.h"
 # rama classic-variedad: planes de juego, mazos dinamicos, memoria del jugador y dificultad adaptable
 if [[ -f "$src/src/ia_plan.h" ]]; then cp "$src/src/ia_plan.h" "$t/examples/yugireload/ia_plan.h"; fi
+# rama classic-ia-humana: busqueda que imagina jugadas y capa humana del rival
+if [[ -f "$src/src/ia_humana.h" ]]; then cp "$src/src/ia_humana.h" "$t/examples/yugireload/ia_humana.h"; fi
 # rama classic-personajes: personajes del anime (modo historia) y sus retratos
-for h in personajes.h personajes_ui.h; do if [[ -f "$src/src/$h" ]]; then cp "$src/src/$h" "$t/examples/yugireload/$h"; fi; done
+for h in personajes.h personajes_ui.h historia_dialogos.h historia_dialogos_ui.h tutorial.h tutorial_ui.h; do if [[ -f "$src/src/$h" ]]; then cp "$src/src/$h" "$t/examples/yugireload/$h"; fi; done
+# rama classic-resultado: velocidad de animaciones y pantalla de resultado
+for h in velocidad.h velocidad_juego.h resultado.h resultado_juego.h resultado_ui.h entrada_clave.h entrada_clave_juego.h entrada_clave_ui.h; do if [[ -f "$src/src/$h" ]]; then cp "$src/src/$h" "$t/examples/yugireload/$h"; fi; done
+# rama classic-galeria: galeria de figuras 3D (logica, juego e interfaz)
+for h in galeria.h galeria_juego.h galeria_ui.h; do cp "$src/src/$h" "$t/examples/yugireload/$h"; done
+# rama classic-extras: Personalizacion (fundas, tapete, controles, estadisticas)
+for h in cosmeticos.h cosmeticos_juego.h cosmeticos_ui.h estadisticas.h; do if [[ -f "$src/src/$h" ]]; then cp "$src/src/$h" "$t/examples/yugireload/$h"; fi; done
 cp "$src/third_party/stb_truetype.h" "$t/examples/yugireload/stb_truetype.h"
 # rama classic-audio: el mezclador (audio.h) y el decodificador de OGG (stb_vorbis, dominio publico)
 cp "$src/src/audio.h" "$src/third_party/stb_vorbis.c" "$t/examples/yugireload/"
@@ -68,7 +79,7 @@ cp "$assets"/models/tablero.glb "$assets"/models/esfera.glb "$assets"/models/ray
 # interfaz: caras de las cartas y sus datos (no van al repo) y las fuentes libres (OFL, en el repo)
 # las caras son ~3 GB: rsync solo copia las que cambiaron (antes rm + cp tardaba 12 min en cada compilacion)
 mkdir -p "$t/ps5/assets/ui/fuentes"
-rsync -a --delete --include='*.png' --include='cara_hd_*.jpg' --include='cartas_ui.txt' --exclude='*' "$assets/ui/" "$t/ps5/assets/ui/"
+rsync -a --delete --include='*.png' --include='cara_hd_*.jpg' --include='portada.jpg' --include='cartas_ui.txt' --exclude='*' "$assets/ui/" "$t/ps5/assets/ui/"
 # caras en HD (cara_hd_<id>.jpg, del agente classic-datos): el juego las prefiere a cara_<id>.png y les arma mipmaps
 if [[ -f "$assets/ui/cartas_ui_en.txt" ]]; then cp "$assets/ui/cartas_ui_en.txt" "$t/ps5/assets/ui/"; fi   # textos en ingles (classic-idioma)
 if [[ -f "$assets/ui/cartas_classic.txt" ]]; then cp "$assets/ui/cartas_classic.txt" "$t/ps5/assets/ui/"; fi   # limites Goat (classic-constructor)
@@ -132,7 +143,7 @@ else
 fi
 # rama classic-personajes: los 47 personajes y sus mazos (personajes_gen.py) y los retratos (retratos_post.py, no van
 # al repo: <assets>/personajes/retrato_<id>.png)
-for f in personajes.txt personajes_rivales.txt; do if [[ -f "$src/datos/$f" ]]; then cp "$src/datos/$f" "$t/ps5/assets/ui/"; fi; done
+for f in personajes.txt personajes_rivales.txt dialogos.txt; do if [[ -f "$src/datos/$f" ]]; then cp "$src/datos/$f" "$t/ps5/assets/ui/"; fi; done
 mkdir -p "$t/ps5/assets/personajes" "$assets/personajes"
 rsync -a --delete --include='retrato_*.png' --exclude='*' "$assets/personajes/" "$t/ps5/assets/personajes/"
 # rama classic-audio: musica (ogg) y efectos (wav) + audio.txt, sacados de la copia de Master Duel del usuario
@@ -187,5 +198,7 @@ d["assets"].append({"path": "models/yugi", "from": "file", "source": "ps5/assets
     "url": "-"})
 json.dump(d, open(p, "w"), indent=2, ensure_ascii=False)
 PY
-if [[ -f "$assets/sce_sys/icon0.png" ]]; then cp "$assets/sce_sys/icon0.png" "$t/ps5/sce_sys/icon0.png"; fi   # (no va al repo)
+for f in icon0.png pic0.png; do   # icono 512x512 y fondo 1920x1080 del titulo (no van al repo)
+	if [[ -f "$assets/sce_sys/$f" ]]; then cp "$assets/sce_sys/$f" "$t/ps5/sce_sys/$f"; fi
+done
 echo "sincronizado en $t"

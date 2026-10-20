@@ -162,6 +162,7 @@ static void turnoJugador()
 			const ia::Monstruo& m = x.m[i];
 			if (m.vacia() || m.bocaAbajo || m.defensa || m.ataco || !duelo.puedeAtacar(0, i)) continue;   // (Swords, Gravity Bind...)
 			const int z = zonaPorId("jugador_monstruo_" + std::to_string(i));
+			duelo.ef.m2Repeticion = -1;   // (rama classic-motor2: si hay repeticion del ataque queda en 0: puede volver a atacar)
 			if (!elegir({ F_ZONA, z }, AC_ATACAR)) {
 				fprintf(stderr, "FALLO: no se pudo elegir Atacar\n");
 				fallos++;
@@ -169,8 +170,8 @@ static void turnoJugador()
 			}
 			const int uidAntes = x.m[i].uid;   // (rama classic-efectos: si murio y otro llego a su zona, no cuenta)
 			if (ctl.estado == ELEGIR_OBJETIVO) pulso(B_X);
-			if (!x.m[i].vacia() && x.m[i].uid == uidAntes && !x.m[i].ataco) {
-				fprintf(stderr, "FALLO: el ataque por mando no entro\n");
+			if (!x.m[i].vacia() && x.m[i].uid == uidAntes && !x.m[i].ataco && duelo.ef.m2Repeticion != 0) {
+				fprintf(stderr, "FALLO: el ataque por mando no entro (%s, repeticion %d)\n", x.m[i].id.c_str(), duelo.ef.m2Repeticion);
 				fallos++;
 			}
 			jugadasMando++;

@@ -85,8 +85,12 @@ else:
     print("AVISO: sin goat.json no hay recetas de fusion/ritual", file=sys.stderr)
 
 
+# nombres viejos de los textos (YGOPRODeck) -> la carta con su nombre actual: Amphibious Bugroth pide "Defender of the Sea"
+NOMBRE_VIEJO = {"defender of the sea": "sentinel_of_the_seas"}
+
+
 def idd(nombre_en):
-    i = POR_EN.get(nombre_en.lower()) or slug(nombre_en)
+    i = POR_EN.get(nombre_en.lower()) or NOMBRE_VIEJO.get(nombre_en.lower()) or slug(nombre_en)
     i = EXCEPCION.get(i, i)
     return i if i in C else None
 

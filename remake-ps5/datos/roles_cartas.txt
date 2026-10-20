@@ -849,3 +849,5 @@ valkyrie_vierte|et
 virus_cannon|e
 viser_des|d
 vorse_raider|g
+zera_the_mant|k
+zera_ritual|k

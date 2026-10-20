@@ -23,6 +23,8 @@
 #include <string>
 #include <vector>
 
+#include "guardado.h"   // rama classic-pulido: guardado atomico
+
 namespace personajes {
 
 struct Saga { const char *id, *es, *en; };
@@ -65,6 +67,7 @@ class Historia {
 public:
 	std::vector<Personaje> lista;   // por saga y nivel (el orden del archivo)
 	std::set<std::string> vencidos;
+	bool finalVisto{ false };   // rama classic-historia: el final de la historia ya se vio (desbloquea el Modo Desafio)
 
 	// carpeta ui con "/" al final
 	bool leer(const std::string& carpetaUi)
@@ -112,20 +115,21 @@ public:
 	{
 		rutaProgreso = ruta;
 		vencidos.clear();
+		finalVisto = false;
 		std::ifstream f(ruta);
 		std::string clave, id;
-		while (f >> clave >> id)
+		while (f >> clave >> id) {
 			if (clave == "vencido") vencidos.insert(id);
+			if (clave == "final") finalVisto = true;
+		}
 		fprintf(stderr, "[personajes] historia: %d de %d vencidos (%s)\n", (int)vencidos.size(), (int)lista.size(), ruta.c_str());
 	}
 	void guardar() const
 	{
-		if (FILE* f = fopen(rutaProgreso.c_str(), "w")) {
-			for (const std::string& v : vencidos) fprintf(f, "vencido %s\n", v.c_str());
-			fclose(f);
-		} else {
-			fprintf(stderr, "[personajes] no se pudo guardar %s\n", rutaProgreso.c_str());
-		}
+		std::string s;   // (rama classic-pulido: guardado atomico, guardado.h)
+		for (const std::string& v : vencidos) s += "vencido " + v + "\n";
+		if (finalVisto) s += "final visto\n";   // rama classic-historia
+		guardado::guardarAtomico(rutaProgreso, s);
 	}
 	// true si es la primera vez que lo vence
 	bool vencer(const std::string& id)
@@ -164,6 +168,13 @@ public:
 		int s = 0;
 		while (s + 1 < NUM_SAGAS && sagaAbierta(s + 1)) s++;
 		return s;
+	}
+	// rama classic-historia: todos vencidos (el final de la historia)
+	bool completa() const
+	{
+		for (const Personaje& x : lista)
+			if (!vencido(x.id)) return false;
+		return !lista.empty();
 	}
 	int vencidosEn(int s) const
 	{

@@ -6,7 +6,7 @@ Implementacion propia en C++: el diseno de ocgcore/EDOPro se estudio solo como r
 
 ## Contador
 
-**Cartas con su efecto en el motor: 1335** (DefCarta propia); con las que funcionan por regla (Polymerization, magias de ritual, Toons: 28) y las que no tienen efecto (normales y fusiones sin efecto: 412), **1769 / 1769 cartas jugables con todo lo suyo**. Pendientes: 0 (lista al final, por apariciones en los mazos de rivales.txt y personajes_rivales.txt).
+**Cartas con su efecto en el motor: 1335** (DefCarta propia); con las que funcionan por regla (Polymerization, magias de ritual, Toons: 28) y las que no tienen efecto (normales y fusiones sin efecto: 412). **El estado real lo da la certificación de la rama classic-probador** (`docs/certificacion_efectos.md` y `.csv` en esa rama): de las 1383 cartas con efecto, OK 1319, FALLA 24 (fusiones con efecto que el motor no tiene: Dark Paladin, Thousand-Eyes Restrict, Dark Flare Knight, XYZ-Dragon Cannon y sus partes...) y SIN PRUEBA 40; además 5 Toons con efecto propio no lo tienen. La lista de pendientes del final solo cuenta las cartas sin DefCarta, por apariciones en los mazos de rivales.txt y personajes_rivales.txt.
 
 ## Diseno
 
@@ -593,7 +593,8 @@ mano), Narrow Pass, Neko Mane King, Ordeal of a Traveler, Pineapple Blast, Pyro 
     Nubian Guard / Aswan Apparition: va la ultima que cumple. Mirror Wall: la mitad del ATK original; paga sola si
     puede. Mysterious Guard: sin el segundo objetivo. Parasite Paracide: sin cambiar la raza de los del rival. Steel
     Scorpion: se destruye en la fase final del segundo turno de su duenno. Mecha-Dog Marron: el danno sin cadena.
-38. Ride of the Valkyries: sin su efecto desde el cementerio. Valkyrie Erste / Brunhilde: sin su primer efecto. Amazoness
+38. Ride of the Valkyries: su efecto del cementerio solo se ofrece al ir alli tras resolver. Valkyrie Brunhilde: sin
+    su primer efecto. Mischief of the Time Goddess: se activa en tu batalla sin un ataque en curso y la termina. Amazoness
     Archers: sin la obligacion de atacar. Big Eye: muestra las 5 sin reordenarlas. Coach Goblin: siempre que pueda.
     Exodia Necross: si lo destruyen las magias/trampas. Dark Scorpion - Chick the Yellow: solo devolver a la mano.
     Darkbishop Archfiend: sin su proteccion con el dado. Familiar Knight: el juego invoca el mas fuerte de nivel 4 de
@@ -813,6 +814,24 @@ en cartas_classic.txt van como las Goat (sin desbloqueo). Deja <cache>/extra.jso
 receta de ritual (T|zera_the_mant|zera_ritual) pero no las mete en los mazos generados (asi los mazos no cambian).
 Decision: Zera the Mant no tiene duenno (en Monster World es un personaje del juego de rol, no una carta de duelo).
 Zera the Mant no tiene efecto: se invoca por ritual con Zera Ritual (niveles 8 o mas), con el ritual normal del motor.
+
+### Carta firma extra: Mischief of the Time Goddess (Leon)
+Carta firma de Leon (variante "Valquirias de su hermano", con Valkyrie Erste y Ride of the Valkyries: personajes_datos.py
+-> personajes_gen.py --firma -> preparar_classic.py; arte Gemini en nano-banana/classic/arte/mischief_of_the_time_goddess).
+Magia rapida: nadie responde a su activacion (motivoNoActivar) y solo como eslabon 1; en tu batalla, si todos tus
+monstruos son Valkyries boca arriba (min. 1), al cerrar la cadena (motorDiosaTiempo) se salta al comienzo de la batalla
+de tu proximo turno: sin principal 2 ni fase final (Ride of the Valkyries no devuelve tus monstruos), el turno del
+rival entero, y sin robo, espera ni principal 1; ese turno no activas otra. Completa el combo: Ride of the Valkyries
+desde el cementerio (se destierra: Mischief del mazo a la mano; efecto 1, al ir alli) y Valkyrie Erste invocada por
+Ride (Mischief del cementerio a la mano; efecto 2).
+
+### Combos cortados: Swift Gaia the Fierce Knight y Sentinel of the Seas
+Las dos cartas que nombraban otras del juego sin estar (listas/combos_cortados.md). Swift Gaia the Fierce Knight: carta
+extra (datos/cartas_extra.txt, era Goat): se invoca normal sin sacrificios si es la unica carta de la mano
+(puedeInvocarNormal, la IA y control.h como Fusilier Dragon); Spiral Spear Strike lo hace perforar (motorPerforaLado).
+Sentinel of the Seas: carta firma de Mako (variante Oceano, con Amphibious Bugroth); rivales_gen.py traduce el nombre
+viejo de su texto ("Defender of the Sea", NOMBRE_VIEJO) y personajes_gen.py arma la receta
+F|amphibious_bugroth|ground_attacker_bugroth+sentinel_of_the_seas con Polymerization en el mazo.
 
 ## Atajos mas visibles para el jugador (propuesta de orden para quitarlos)
 

@@ -9,9 +9,13 @@
 //   g++ -std=c++17 -O2 -I remake-ps5/src remake-ps5/src/pruebas/prueba_juego.cpp -o /tmp/prueba_juego &&
 //   /tmp/prueba_juego <carpeta ui/ con cartas_ui.txt, rivales.txt y personajes.txt> [duelos]
 #include "control.h"
+#include "duelo_visores.h"   // rama classic-duelo-ui
 #include "mazo.h"
 #include "personajes.h"
+#include "historia_dialogos.h"
+#include "tutorial.h"
 #include <chrono>
+#include <atomic>
 #include <set>
 
 // ---- maquetas de lo que el juego tiene en Vulkan / audio / entornos
@@ -23,12 +27,15 @@ inline int porTema(const std::string&) { return 0; }
 inline int claveDe(const std::string&) { return 0; }
 static const char* const CLAVES[] = { "neutro" };
 }
+namespace campos {
+inline bool esCampo(const std::string&) { return false; }
+}
 
 // botones del mando de la consola (platform.h): los mismos bits
 enum : uint32_t {
 	PAD_OPTIONS = 0x000008, PAD_UP = 0x000010, PAD_RIGHT = 0x000020, PAD_DOWN = 0x000040, PAD_LEFT = 0x000080,
 	PAD_L1 = 0x000400, PAD_R1 = 0x000800, PAD_TRIANGLE = 0x001000, PAD_CIRCLE = 0x002000, PAD_CROSS = 0x004000,
-	PAD_SQUARE = 0x008000, PAD_R3 = 0x000004, PAD_TOUCH_PAD = 0x100000,
+	PAD_SQUARE = 0x008000, PAD_R3 = 0x000004, PAD_TOUCH_PAD = 0x100000, PAD_L3 = 0x000002,
 };
 struct EstadoMando { uint32_t pressed{ 0 }, held{ 0 }; float left_x{ 0 }, left_y{ 0 }, right_x{ 0 }, right_y{ 0 }, l2{ 0 }, r2{ 0 }; };
 
@@ -44,6 +51,7 @@ struct Juego {
 		void sfx(const char*, float = 1.0f, float = 0.0f, float = 0.0f) {}
 		bool hay(const char*) const { return false; }
 		void pararMusica(float) {}
+		std::atomic<float> volMusica{ 1.0f }, volEfectos{ 1.0f };   // (menu_principal.h: Opciones)
 	} sonido;
 	// interfaz
 	struct Interfaz {
@@ -52,7 +60,9 @@ struct Juego {
 		std::string nombreCarta(const std::string& id) const { return id; }
 		void cambiarLP(bool rival, int v) { lps[rival ? 1 : 0] = v; }
 		int lp(bool rival) const { return lps[rival ? 1 : 0]; }
-		void contarMazos(int, int, int) {}
+		int mazos[3]{ -1, -1, -1 };   // (rama classic-duelo-ui: los contadores de la mesa)
+		void contarMazos(int j, int r, int f) { mazos[0] = j, mazos[1] = r, mazos[2] = f; }
+		void conectarConsulta(const visores::Consulta*) {}
 	} interfazDuelo;
 	struct EfectosCartas { int receta(const std::string&) const { return 0; } } efectosCartas;
 	// (como entornos.h: un tema por numero o, desde classic-fondos, la clave de tema / el id del personaje)
@@ -61,6 +71,7 @@ struct Juego {
 		std::string clave;
 		void pedir(int e) { objetivo = e, clave.clear(); }
 		void pedir(const std::string& c) { clave = c; }
+		void soltarCampo() {}
 	} entornosRival;
 	bool entornoFijo{ false };
 	std::string entornoVista;
@@ -77,8 +88,8 @@ struct Juego {
 	static constexpr float T_IMPACTO = 0.55f, DURACION_ATAQUE = 1.6f;
 	bool hayAtaque() const { return tAtaque >= 0.0f && zonaAtacante >= 0 && zonaObjetivo >= 0; }
 	void activarEfectoCarta(const std::string&, int) {}
-	void activarCampo(const std::string&) {}
-	void destruirCampo(const std::string&) {}
+	void activarCampo(const std::string&, int = 0) {}
+	void destruirCampo(const std::string&, int = 0) {}
 	// mazo (mazo_duelo.h: lo que usa el duelo)
 	mazo::Coleccion coleccion;
 	mazo::Mazo mazoJugador, mazoDuelo;
@@ -103,6 +114,8 @@ struct Juego {
 	bool mandoListo{ false };
 
 #include "duelo_juego.h"
+#include "maquetas_juego.h"   // (resultado, velocidad, entrada de las cartas clave, menu y portada: maquetas)
+#include "duelo_consulta.h"   // rama classic-duelo-ui
 
 	void preparar(const std::string& ui_)
 	{
@@ -140,6 +153,7 @@ struct Juego {
 		if (pad & PAD_L1) r |= control::B_L1;
 		if (pad & PAD_R1) r |= control::B_R1;
 		if (pad & PAD_R3) r |= control::B_R3;
+		if (pad & PAD_L3) r |= control::B_L3;
 		return r;
 	}
 	void avanzarAtaque()
@@ -191,6 +205,10 @@ struct Juego {
 			procesarEventos();
 			return;
 		}
+		if (mandoConsulta(pulsos, dt)) {   // (rama classic-duelo-ui)
+			procesarEventos();
+			return;
+		}
 		ctl.avanzar(dt, pulsos);
 		for (const control::Evento& e : ctl.eventos) ejecutarEvento(e);
 		procesarEventos();
@@ -204,8 +222,54 @@ struct Juego {
 		padAntes = pad;
 		avanzarAtaque();
 		avanzarMando();
-		if (mandoListo && !ajustesAbiertos() && !constructorMazo.abierto && !pausa.abierta) avanzarDueloIA(frameTimer);
+		if (mandoListo && !ajustesAbiertos() && !constructorMazo.abierto && !pausa.abierta) {
+			avanzarDueloIA(frameTimer);
+			avanzarConsulta(frameTimer);   // (rama classic-duelo-ui)
+		}
+		revisarMesa();
 	}
+	// la mesa (lo que se dibuja) igual al duelo cuando no hay nada pendiente (fallo 1: la carta que desaparece)
+	int fallosMesa{ 0 };
+	void revisarMesa()
+	{
+		if (ctl.vista.pantalla != control::VistaDuelo::DUELO || ctl.vista.sorteo || reparto > 0 || ctl.robo.activo || hayAtaque() || ctl.vuelo.activo || mesaPendiente || sucesosVistos < dueloIA.sucesos.size() || esperaEfecto > 0.0f) return;
+		for (int lado = 0; lado < 2; lado++) {
+			for (int i = 0; i < ia::ZONAS; i++) {
+				for (int mg = 0; mg < 2; mg++) {
+					const int z = zonaMesaIA(lado, i, mg != 0);
+					const std::string id = mg ? dueloIA.l[(size_t)lado].mt[(size_t)i].id : dueloIA.l[(size_t)lado].m[(size_t)i].id;
+					if (ctl.zonas[(size_t)z].carta != id && fallosMesa++ < 5)
+						fprintf(stderr, "FALLO: mesa distinta del duelo en %s: mesa '%s', duelo '%s' (turno %d)\n", control::ZONAS_MESA[z].id, ctl.zonas[(size_t)z].carta.c_str(), id.c_str(), dueloIA.turno);
+				}
+			}
+		}
+		// rama classic-duelo-ui: los contadores de la mesa (mazo, extra, cementerio, desterradas) y las listas de los
+		// visores son los de ia::Duelo
+		revisionesContadores++;
+		for (int lado = 0; lado < 2; lado++) {
+			const ia::Lado& x = dueloIA.l[(size_t)lado];
+			const char* quien = lado ? "rival" : "jugador";
+			auto mal = [&](const char* que, int mesa, int duelo) {
+				if (mesa != duelo && fallosContadores++ < 6)
+					fprintf(stderr, "FALLO: contador de %s del %s: mesa %d, duelo %d (turno %d)\n", que, quien, mesa, duelo, dueloIA.turno);
+			};
+			mal("cementerio", (int)(lado ? ctl.cementerioR : ctl.cementerioJ).size(), (int)x.cementerio.size());
+			mal("desterradas", (int)(lado ? ctl.desterradosR : ctl.desterradosJ).size(), (int)x.desterrados.size());
+			mal("extra", (int)(lado ? ctl.extraR : ctl.extraJ).size(), (int)x.extra.size());
+			mal("mazo", interfazDuelo.mazos[lado], (int)x.mazo.size());
+			mal("cementerio (visor)", (int)visores::lista(ctl, visores::P_CEMENTERIO, lado).size(), (int)x.cementerio.size());
+			mal("desterradas (visor)", (int)visores::lista(ctl, visores::P_DESTERRADAS, lado).size(), (int)x.desterrados.size());
+			mal("extra (visor)", (int)visores::lista(ctl, visores::P_EXTRA, lado).size(), (int)x.extra.size());
+			if ((lado ? ctl.cementerioR : ctl.cementerioJ) != x.cementerio && fallosContadores++ < 6) fprintf(stderr, "FALLO: el cementerio del %s no es el del duelo\n", quien);
+			if ((lado ? ctl.desterradosR : ctl.desterradosJ) != x.desterrados && fallosContadores++ < 6) fprintf(stderr, "FALLO: las desterradas del %s no son las del duelo\n", quien);
+		}
+		if (interfazDuelo.mazos[2] != (int)dueloIA.l[0].extra.size() && fallosContadores++ < 6)
+			fprintf(stderr, "FALLO: contador de extra del jugador: %d, duelo %d\n", interfazDuelo.mazos[2], (int)dueloIA.l[0].extra.size());
+		// el registro va al dia: su ultimo turno es el del duelo
+		if (!consulta.reg.lineas.empty() && consulta.reg.turno != dueloIA.turno && fallosContadores++ < 6)
+			fprintf(stderr, "FALLO: el registro va por el turno %d y el duelo por el %d\n", consulta.reg.turno, dueloIA.turno);
+	}
+	int fallosContadores{ 0 }, revisionesContadores{ 0 };
 	uint32_t padAntes{ 0 };
 	// apretar y soltar un boton (como el usuario: ~0.1 s abajo) y esperar "espera" s
 	void apretar(uint32_t pad, float espera = 0.3f)
@@ -248,6 +312,9 @@ static void jugarAlgo(Juego& g, bool atacar)
 			continue;
 		}
 		int elegida = -1;
+		// (fallo 1: "coloque un monstruo y desaparecio") primero colocar un monstruo boca abajo, si se puede
+		for (int k = 0; k < (int)g.ctl.opciones.size() && elegida < 0 && !atacar; k++)
+			if (g.ctl.opciones[(size_t)k].activa && g.ctl.opciones[(size_t)k].accion == AC_COLOCAR_MONSTRUO) elegida = k;
 		for (int k = 0; k < (int)g.ctl.opciones.size() && elegida < 0; k++) {
 			const Opcion& o = g.ctl.opciones[(size_t)k];
 			if (!o.activa) continue;
@@ -289,15 +356,39 @@ int main(int argc, char** argv)
 	for (int n = 0; n < N; n++) {
 		// arranque: pantalla de elegir rival (modo historia si hay personajes)
 		g.esperar(1.0f);
+		if (g.ctl.vista.pantalla == VD::RESULTADO) g.apretar(PAD_CROSS, 0.5f);   // (rama classic-resultado: la pantalla del final)
 		if (g.ctl.vista.pantalla != VD::ELEGIR_RIVAL) FALLO("no arranca en elegir rival (pantalla %d)", g.ctl.vista.pantalla);
 		if (n == 0 && g.ctl.vista.modo != VD::HISTORIA) FALLO("no arranca en modo historia");
 		if (const char* r = getenv("PRUEBA_RIVAL")) {   // (otro personaje de la saga: con la cruceta, como el usuario)
 			for (int k = 0; k < 12 && g.ctl.vista.personaje != r; k++) g.apretar(PAD_RIGHT, 0.2f);
 		}
 		g.apretar(PAD_CROSS, 1.0f);   // elegir el rival (el primero sin vencer)
+		// rama classic-historia: la escena del rival (dialogo) sale antes del duelo; circulo la salta (el tiempo de cada
+		// linea lo lleva el dibujo, que aca no hay) y empieza el duelo
+		if (historia_dialogos::escena().activa()) g.apretar(PAD_CIRCLE, 1.0f);
+		if (historia_dialogos::escena().activa()) FALLO("el dialogo del rival no se salta con circulo");
 		if (g.ctl.vista.pantalla != VD::DUELO) {
 			FALLO("X no empieza el duelo (pantalla %d, modo %d, saga %d idx %d abierta %d, aviso %s)", g.ctl.vista.pantalla, g.ctl.vista.modo, g.ctl.vista.saga, g.ctl.vista.idx, (int)g.ctl.vista.sagaAbierta, g.ctl.aviso.c_str());
 			break;
+		}
+		// rama classic-duelo-arreglos: piedra, papel o tijera (X elige; si gana el jugador, X = ir primero)
+		if (!g.ctl.vista.sorteo) FALLO("el duelo no empieza con piedra, papel o tijera");
+		const int serie0 = g.ctl.robo.serie;
+		for (int k = 0; k < 30 && g.ctl.vista.sorteo; k++) g.apretar(n % 2 ? PAD_RIGHT : 0, 0.1f), g.apretar(PAD_CROSS, 0.5f);
+		if (g.ctl.vista.sorteo) FALLO("el sorteo no termina");
+		if (g.ctl.vista.sorteoEmpieza != g.dueloIA.activo) FALLO("empieza %d y el sorteo dijo %d", g.dueloIA.activo, g.ctl.vista.sorteoEmpieza);
+		// el reparto: las manos se llenan carta por carta (robo animado)
+		{
+			int robos = g.ctl.robo.serie - serie0, serie = g.ctl.robo.serie;
+			for (int k = 0; k < (int)(8.0f / g.frameTimer) && (g.reparto > 0 || g.ctl.robo.activo || g.sucesosVistos < g.dueloIA.sucesos.size()); k++) {
+				g.cuadro(0);
+				if (g.ctl.robo.serie != serie) robos++, serie = g.ctl.robo.serie;
+			}
+			if (robos < 10) FALLO("el reparto inicial anima %d cartas (se esperaban 10 o 11)", robos);
+			if (g.ctl.manoJ != g.dueloIA.l[0].mano || g.ctl.manoR != (int)g.dueloIA.l[1].mano.size())
+				FALLO("tras el reparto la mano en pantalla (%d / %d) no es la del duelo (%d / %d)", (int)g.ctl.manoJ.size(), g.ctl.manoR, (int)g.dueloIA.l[0].mano.size(),
+				      (int)g.dueloIA.l[1].mano.size());
+			printf("reparto: %d cartas animadas, empieza %s\n", robos, g.dueloIA.activo == 0 ? "el jugador" : "el rival");
 		}
 		g.esperar(2.0f);   // el cartel de inicio y los sucesos del reparto
 		const int turnoInicial = g.dueloIA.turno;
@@ -307,6 +398,10 @@ int main(int argc, char** argv)
 			if (g.dueloIA.activo == 0 && g.dueloIA.decide() == 0) {
 				const ia::Fase antes = g.dueloIA.fase;
 				const int turnoAntes = g.dueloIA.turno;
+				if (g.ctl.estado == control::ELEGIR_CARTA) {   // (el duelo pide elegir una carta: X sobre la primera)
+					g.apretar(PAD_CROSS, 0.6f);
+					continue;
+				}
 				if (g.ctl.estado == control::MENU) {
 					// una pregunta del duelo (responder): "No activar"
 					g.ctl.opcion = (int)g.ctl.opciones.size() - 1;
@@ -375,6 +470,51 @@ int main(int argc, char** argv)
 		if (g.dueloIA.ganador < 0 && g.dueloIA.turno < turnoInicial + 4) FALLO("el duelo %d no llego a 4 turnos (turno %d)", n, g.dueloIA.turno);
 		printf("duelo %d: contra %s, turnos %d -> %d, fases del jugador con CUADRADO %d, LP %d / %d\n", n, g.ctl.vista.rivalEs.c_str(), turnoInicial,
 		       g.dueloIA.turno, fasesJugador, g.dueloIA.l[0].lp, g.dueloIA.l[1].lp);
+		// rama classic-duelo-ui: el registro (L3) y los visores de zonas (X en el cementerio), con el mando
+		if (g.ctl.vista.pantalla == VD::DUELO) {
+			for (int k = 0; k < 20 && g.ctl.estado != control::NAVEGAR; k++) g.apretar(PAD_CIRCLE, 0.2f);
+			g.apretar(PAD_L3, 0.3f);
+			if (!g.consulta.vis.abierto || g.consulta.vis.pestana != visores::P_REGISTRO) FALLO("L3 no abre el registro del duelo");
+			if (g.consulta.reg.lineas.empty()) FALLO("el registro esta vacio despues de %d turnos", g.dueloIA.turno);
+			int turnos = 0, fases = 0;
+			for (const registro::Linea& l : g.consulta.reg.lineas) turnos += l.tipo == ia::S_TURNO, fases += l.tipo == ia::S_FASE;
+			if (turnos < 2 || fases < 2) FALLO("el registro no anota los turnos (%d) o las fases (%d)", turnos, fases);
+			printf("registro: %d lineas (%d turnos, %d fases); ultima: %s\n", (int)g.consulta.reg.lineas.size(), turnos, fases,
+			       g.consulta.reg.lineas.empty() ? "-" : registro::Registro::texto(g.consulta.reg.lineas.back(), nullptr).c_str());
+			g.apretar(PAD_DOWN, 0.2f);
+			if (g.consulta.reg.lineas.size() > 1 && g.consulta.vis.sel != 1) FALLO("abajo no recorre el registro (fila %d)", g.consulta.vis.sel);
+			g.apretar(PAD_RIGHT, 0.2f);   // -> cementerio
+			if (g.consulta.vis.pestana != visores::P_CEMENTERIO) FALLO("derecha no pasa a la pestanna del cementerio");
+			if (g.consulta.filas(g.ctl) != (int)g.dueloIA.l[0].cementerio.size())
+				FALLO("el visor del cementerio tiene %d cartas y el duelo %d", g.consulta.filas(g.ctl), (int)g.dueloIA.l[0].cementerio.size());
+			g.apretar(PAD_SQUARE, 0.2f);   // -> el del rival
+			if (g.consulta.vis.lado != 1 || g.consulta.filas(g.ctl) != (int)g.dueloIA.l[1].cementerio.size())
+				FALLO("cuadrado no muestra el cementerio del rival (%d cartas, duelo %d)", g.consulta.filas(g.ctl), (int)g.dueloIA.l[1].cementerio.size());
+			if (g.consulta.filas(g.ctl) > 0) {   // X: el detalle grande de la carta; circulo vuelve al visor
+				g.apretar(PAD_CROSS, 0.2f);
+				if (g.ctl.estado != control::DETALLE || g.ctl.cartaDetalle != g.dueloIA.l[1].cementerio.back()) FALLO("X en el visor no abre el detalle de la carta");
+				g.apretar(PAD_CIRCLE, 0.2f);
+				if (!g.consulta.vis.abierto || g.ctl.estado != control::NAVEGAR) FALLO("circulo en el detalle no vuelve al visor");
+			}
+			g.apretar(PAD_RIGHT, 0.2f), g.apretar(PAD_RIGHT, 0.2f);   // -> extra
+			if (g.consulta.vis.pestana != visores::P_EXTRA || g.consulta.filas(g.ctl) != (int)g.dueloIA.l[1].extra.size()) FALLO("el visor del extra del rival no coincide");
+			g.apretar(PAD_CIRCLE, 0.2f);
+			if (g.consulta.vis.abierto) FALLO("circulo no cierra el panel");
+			// X sobre el cementerio de la mesa: su visor
+			g.ctl.foco = control::Foco{ control::F_ZONA, control::zonaPorId("rival_cementerio") };
+			g.apretar(PAD_CROSS, 0.2f);
+			if (!g.consulta.vis.abierto || g.consulta.vis.pestana != visores::P_CEMENTERIO || g.consulta.vis.lado != 1) FALLO("X en el cementerio del rival no abre su visor");
+			g.apretar(PAD_L3, 0.2f);
+			if (g.consulta.vis.abierto) FALLO("L3 no cierra el panel");
+			g.ctl.foco = control::Foco{ control::F_ZONA, control::zonaPorId("jugador_desterrado") };
+			g.apretar(PAD_CROSS, 0.2f);
+			if (!g.consulta.vis.abierto || g.consulta.vis.pestana != visores::P_DESTERRADAS || g.consulta.vis.lado != 0) FALLO("X en las desterradas no abre su visor");
+			g.apretar(PAD_CIRCLE, 0.2f);
+			printf("visores: cementerio %d / %d, desterradas %d / %d, extra %d / %d; jugables ahora: mano %d, zonas %d; contadores revisados %d veces\n",
+			       (int)g.dueloIA.l[0].cementerio.size(), (int)g.dueloIA.l[1].cementerio.size(), (int)g.dueloIA.l[0].desterrados.size(),
+			       (int)g.dueloIA.l[1].desterrados.size(), (int)g.dueloIA.l[0].extra.size(), (int)g.dueloIA.l[1].extra.size(), (int)g.consulta.jug.mano.size(),
+			       (int)g.consulta.jug.zonas.size(), g.revisionesContadores);
+		}
 		// salir: con la pausa (OPTIONS corto). Alternando: Abandonar duelo / Salir al menu principal
 		if (g.ctl.vista.pantalla == VD::DUELO) {
 			g.esperar(1.0f);
@@ -392,7 +532,11 @@ int main(int argc, char** argv)
 				for (int k = 0; k < 8 && g.opcionesPausa()[(size_t)g.pausa.opcion] != quiero; k++) g.apretar(PAD_DOWN, 0.2f);
 				g.apretar(PAD_CROSS, 0.5f);
 				if (quiero == Juego::PA_ABANDONAR && g.ctl.vista.derrotas != derrotas + 1) FALLO("Abandonar duelo no cuenta la derrota");
-				if (g.ctl.vista.pantalla != VD::ELEGIR_RIVAL || g.pausa.abierta) FALLO("la pausa no vuelve a elegir rival (pantalla %d)", g.ctl.vista.pantalla);
+				if (quiero == Juego::PA_ABANDONAR && g.ctl.vista.pantalla == VD::RESULTADO) g.apretar(PAD_CROSS, 0.5f);   // (rama classic-resultado)
+				// (rama classic-menus: "Salir al menu principal" va al menu principal; de ahi se vuelve a elegir rival)
+				const int pantallaEsperada = quiero == Juego::PA_MENU_PRINCIPAL ? VD::MENU : VD::ELEGIR_RIVAL;
+				if (g.ctl.vista.pantalla != pantallaEsperada || g.pausa.abierta) FALLO("la pausa no va a la pantalla esperada (pantalla %d, esperada %d)", g.ctl.vista.pantalla, pantallaEsperada);
+				if (g.ctl.vista.pantalla == VD::MENU) g.irAElegirRival();
 			}
 		} else if (g.ctl.vista.pantalla == VD::RESULTADO) {
 			g.esperar(1.0f);
@@ -409,6 +553,9 @@ int main(int argc, char** argv)
 			if (g.ctl.vista.modo == modo) FALLO("la pausa no cambia de modo");
 		}
 	}
+	if (g.fallosMesa) FALLO("la mesa no refleja el duelo %d veces", g.fallosMesa);
+	if (g.fallosContadores) FALLO("los contadores de las zonas no son los del duelo %d veces", g.fallosContadores);
+	if (g.revisionesContadores == 0) FALLO("no se revisaron los contadores de las zonas");
 	// OPTIONS mantenido 2 s (lo hace la plantilla): no abre la pausa al soltar
 	{
 		g.apretar(PAD_CIRCLE, 0.2f);

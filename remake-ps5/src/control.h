@@ -45,6 +45,7 @@
 
 #include "idioma.h"   // textos armados (Fusion: <carta>)
 #include "ia.h"   // rama classic-ia: el rival (duelo sin efectos, IA y rivales.txt); gancho: sincronizarLado
+#include "opciones.h"   // rama classic-ciclos: Preguntar antes de activar (duelo_juego.h)
 
 namespace control {
 
@@ -67,6 +68,8 @@ static const ZonaMesa ZONAS_MESA[] = {
 	{ "rival_monstruo_4", -5.4f, -2.2f, "monstruo", true }, { "rival_magia_4", -5.4f, -5.5f, "magia", true },
 	{ "rival_campo", 8.2f, -2.2f, "campo", true }, { "rival_fusion", 8.2f, -5.5f, "fusion", true },
 	{ "rival_cementerio", -8.2f, -2.2f, "cementerio", true }, { "rival_mazo", -8.2f, -5.5f, "mazo", true },
+	// rama classic-duelo-ui: las desterradas de cada lado, junto a su cementerio (al final: no mueve los indices de antes)
+	{ "jugador_desterrado", 10.9f, 2.2f, "desterrado", false }, { "rival_desterrado", -10.9f, -2.2f, "desterrado", true },
 };
 constexpr int NUM_ZONAS_MESA = (int)(sizeof(ZONAS_MESA) / sizeof(ZONAS_MESA[0]));
 constexpr float ESCALA_MESA = 1.4f;   // ESCALA_TABLERO del juego
@@ -108,11 +111,13 @@ enum Boton : uint32_t {
 	B_X = 1u << 0, B_CIRCULO = 1u << 1, B_TRIANGULO = 1u << 2, B_CUADRADO = 1u << 3,
 	B_ARRIBA = 1u << 4, B_ABAJO = 1u << 5, B_IZQ = 1u << 6, B_DER = 1u << 7,
 	B_L1 = 1u << 8, B_R1 = 1u << 9, B_R3 = 1u << 10, B_OPTIONS = 1u << 11,
+	B_L3 = 1u << 12,   // rama classic-duelo-ui: registro del duelo
 };
 constexpr uint32_t B_DIRECCIONES = B_ARRIBA | B_ABAJO | B_IZQ | B_DER;
 
 // Convierte lo crudo del mando (botones abajo / recien apretados en las direcciones, stick izquierdo) en pulsos de
 // direccion: uno al apretar y repeticion si se mantiene (0.38 s y luego cada 0.13 s); el stick, igual
+constexpr float REPETIR_PRIMERO = 0.40f, REPETIR_CADA = 0.09f;   // s (rama classic-menus)
 struct Repetidor {
 	uint32_t antes{ 0 };
 	float espera{ 0.0f }, palancaT{ 0.0f };
@@ -121,14 +126,15 @@ struct Repetidor {
 	{
 		uint32_t r = recien & B_DIRECCIONES;
 		const uint32_t dir = abajo & B_DIRECCIONES;
+		// rama classic-menus: un toque = un paso; mantenido, repite tras REPETIR_PRIMERO y luego cada REPETIR_CADA
 		if (dir && dir == antes) {
 			espera -= dt;
 			if (espera <= 0.0f) {
-				espera = 0.13f;
+				espera = REPETIR_CADA;
 				r |= dir;
 			}
 		} else {
-			espera = 0.38f;
+			espera = REPETIR_PRIMERO;
 		}
 		antes = dir;
 		const float largo = sqrtf(lx * lx + ly * ly);
@@ -136,7 +142,7 @@ struct Repetidor {
 			palancaT -= dt;
 			if (palancaT <= 0.0f) {
 				r |= fabsf(lx) > fabsf(ly) ? (lx > 0.0f ? B_DER : B_IZQ) : (ly > 0.0f ? B_ABAJO : B_ARRIBA);   // y hacia abajo +
-				palancaT = palancaSuelta ? 0.38f : 0.14f;
+				palancaT = palancaSuelta ? REPETIR_PRIMERO : REPETIR_CADA;
 				palancaSuelta = false;
 			}
 		} else if (largo < 0.3f) {
@@ -173,6 +179,7 @@ struct Guion {
 		if (n == "l1") return B_L1;
 		if (n == "r1") return B_R1;
 		if (n == "r3") return B_R3;
+		if (n == "l3") return B_L3;
 		if (n == "options") return B_OPTIONS;
 		return 0;
 	}
@@ -276,7 +283,7 @@ struct Foco {
 // rama classic-integracion: lo que la interfaz muestra del duelo real fuera de la mesa (elegir rival, turno del
 // rival, resultado). Lo llena el juego (duelo_juego.h); lo dibuja interfaz.h (duelo_ui.h)
 struct VistaDuelo {
-	enum Pantalla { NINGUNA = 0, ELEGIR_RIVAL, DUELO, RESULTADO };
+	enum Pantalla { NINGUNA = 0, ELEGIR_RIVAL, DUELO, RESULTADO, MENU, PORTADA };   // MENU: menu principal (rama classic-menus); PORTADA: titulo (classic-portada)
 	int pantalla{ NINGUNA };
 	int nivel{ 1 }, nivelMax{ 1 }, niveles{ 8 };
 	std::string rivalEs, rivalEn, lemaEs, lemaEn, personalidad;   // personalidad: clave (ia.personalidad.<clave>)
@@ -304,6 +311,19 @@ struct VistaDuelo {
 	bool pausa{ false };
 	int pausaOpcion{ 0 };
 	std::vector<std::string> pausaOpciones;
+	// rama classic-duelo-arreglos: piedra, papel o tijera antes del duelo (lo lleva duelo_juego.h, lo dibuja duelo_ui.h).
+	// etapa: 0 el jugador elige su mano, 1 se muestran las dos, 2 el ganador (jugador) elige ir primero o segundo,
+	// 3 el rival decidio (se muestra). manos: 0 piedra, 1 papel, 2 tijera (-1 sin elegir)
+	enum EtapaSorteo { SORTEO_ELEGIR = 0, SORTEO_MOSTRAR, SORTEO_ORDEN, SORTEO_RIVAL_DECIDE };
+	bool sorteo{ false };
+	int sorteoEtapa{ 0 }, sorteoOpcion{ 0 }, sorteoManoJ{ -1 }, sorteoManoR{ -1 }, sorteoGanador{ -1 }, sorteoEmpieza{ -1 };
+	float sorteoT{ 0.0f };   // s en la etapa
+	// rama classic-menus: menu principal y sus Opciones (lo lleva menu_principal.h, lo dibuja menu_ui.h)
+	bool menuEnOpciones{ false }, menuSalir{ false };   // dentro de Opciones / pidio salir del juego (X otra vez confirma)
+	int menuOpcion{ 0 };
+	std::vector<std::string> menuOpciones, menuValores;  // claves en espanol (idioma::tr al dibujar) y el valor de cada una
+	// rama classic-menus: duelo libre, el rival dentro del nivel (izq/der) y cuantos hay en el nivel
+	int rivalIdx{ 0 }, rivalesNivel{ 0 };
 };
 
 // lo que llega del juego para armar la mesa
@@ -311,6 +331,7 @@ struct MonstruoInicial { std::string carta; float x, z; bool rival, defensa; };
 struct CartaInicial { std::string zona, carta; bool bocaAbajo; };
 
 constexpr float DURACION_VUELO = 0.6f;   // s de la carta que vuela de la mano a su zona
+constexpr float DURACION_ROBO = 0.42f;   // s de la carta que sale del mazo y va a la mano (rama classic-duelo-arreglos)
 
 class Mando {
 public:
@@ -328,6 +349,7 @@ public:
 	std::vector<std::string> manoJ;
 	int manoR{ 5 };
 	std::vector<std::string> cementerioJ, cementerioR;
+	std::vector<std::string> desterradosJ, desterradosR, extraJ, extraR;   // rama classic-duelo-ui (sincronizarLado)
 	bool demo{ true };          // demo automatica (ataques solos...): se apaga al tocar el mando
 	int fase{ 2 };              // indice de interfaz::FASES
 	float tFase{ 99.0f };       // s desde el ultimo cambio de fase (el cartel)
@@ -350,10 +372,35 @@ public:
 		int serie{ 0 };          // cambia con cada vuelo (la interfaz toma de donde sale)
 		Accion accion{ AC_CANCELAR };
 	} vuelo;
+	// rama classic-duelo-arreglos: la carta que se roba, del mazo a la mano (del jugador boca arriba al llegar; del rival
+	// boca abajo). indice: su lugar en la mano (la interfaz no la dibuja en la mano mientras vuela)
+	struct Robo {
+		bool activo{ false }, rival{ false };
+		std::string carta;
+		int indice{ -1 };
+		float t{ 0.0f };
+		int serie{ 0 };
+	} robo;
+	void robarAnimado(bool rival, const std::string& carta, int indice)
+	{
+		robo.activo = true;
+		robo.rival = rival;
+		robo.carta = carta;
+		robo.indice = indice;
+		robo.t = 0.0f;
+		robo.serie++;
+		anotar("roba %s '%s' (mano %d)", rival ? "el rival" : "el jugador", rival ? "?" : carta.c_str(), indice);
+	}
 	std::string cartaDetalle;   // "" con el detalle de una carta boca abajo del rival: el dorso
 	bool detalleDorso{ false };
 	float tDetalle{ 0.0f };
 	Estado antesDetalle{ NAVEGAR };
+	// rama classic-pulido: la zona de la carta del detalle (-1: mano o lista; para el ATK/DEF actual) y el
+	// desplazamiento del texto, en lineas (cruz arriba/abajo o stick derecho: ejeDetalle lo pone el juego). El maximo lo
+	// fija la interfaz al dibujar (cuantas lineas no entran)
+	int zonaDetalle{ -1 };
+	float ejeDetalle{ 0.0f };
+	mutable float desplDetalle{ 0.0f }, desplDetalleMax{ 0.0f };
 	std::string aviso;
 	float tAviso{ 99.0f };
 	std::vector<Evento> eventos;
@@ -395,6 +442,7 @@ public:
 		manoJ.clear();
 		cementerioJ.clear();
 		cementerioR.clear();
+		desterradosJ.clear(), desterradosR.clear(), extraJ.clear(), extraR.clear();   // (rama classic-duelo-ui)
 		for (const MonstruoInicial& m : monstruos) {
 			if (std::find(fuera.begin(), fuera.end(), m.carta) != fuera.end()) continue;
 			int mejor = -1;
@@ -450,6 +498,10 @@ public:
 		}
 		if (f.i < 0 || f.i >= NUM_ZONAS_MESA) return "";
 		const ZonaMesa& z = ZONAS_MESA[f.i];
+		if (strcmp(z.tipo, "desterrado") == 0) {   // rama classic-duelo-ui: la de arriba de las desterradas
+			const auto& c = z.rival ? desterradosR : desterradosJ;
+			return c.empty() ? "" : c.back();
+		}
 		if (strcmp(z.tipo, "cementerio") == 0) {
 			const auto& c = z.rival ? cementerioR : cementerioJ;
 			return c.empty() ? "" : c.back();
@@ -584,6 +636,8 @@ public:
 			}
 		}
 		(rival ? cementerioR : cementerioJ) = x.cementerio;
+		(rival ? desterradosR : desterradosJ) = x.desterrados;   // rama classic-duelo-ui: visores y contadores
+		(rival ? extraR : extraJ) = x.extra;
 		if (rival) manoR = (int)x.mano.size();
 		anotar("lado %s sincronizado con el duelo (mano %d, cementerio %d)", rival ? "rival" : "jugador", (int)x.mano.size(), (int)x.cementerio.size());
 	}
@@ -609,6 +663,10 @@ public:
 				foco.i = (int)manoJ.size() - 1;
 			}
 		}
+		if (robo.activo) {   // (rama classic-duelo-arreglos: no frena el mando; el duelo espera a que llegue)
+			robo.t += dt / DURACION_ROBO;
+			if (robo.t >= 1.0f) robo.activo = false;
+		}
 		if (vuelo.activo) {
 			vuelo.t += dt / DURACION_VUELO;
 			if (vuelo.t >= 1.0f) {
@@ -633,18 +691,35 @@ public:
 			if (pulsos & (B_CIRCULO | B_TRIANGULO | B_X)) {
 				cambiarEstado(antesDetalle);
 			}
+			// rama classic-pulido: desplazar el texto largo (cruz: de a una linea; stick derecho: continuo)
+			if (pulsos & B_ABAJO) desplDetalle = std::floor(desplDetalle + 1.0f);
+			if (pulsos & B_ARRIBA) desplDetalle = std::ceil(desplDetalle - 1.0f);
+			desplDetalle += ejeDetalle * 9.0f * dt;
+			desplDetalle = std::max(0.0f, std::min(desplDetalle, desplDetalleMax));
 			break;
 		default: break;
 		}
+	}
+
+	// rama classic-duelo-arreglos: el boton de fase del HUD (cuadrado): "" si ahora no se puede pasar de fase
+	const char* botonFase() const
+	{
+		if (!duelo || duelo->activo != 0 || duelo->ganador >= 0 || vista.sorteo || vista.pantalla != VistaDuelo::DUELO) return "";
+		if (estado != NAVEGAR && estado != MENU && estado != VOLANDO && estado != DETALLE) return "";
+		return fasePedida ? "Fase (en espera)" : textoFase();
 	}
 
 	// la barra de ayuda: (boton, texto); botones: X, O, T, C (cuadrado), CRUZ, L1R1, STICK_R, R3
 	std::vector<std::pair<std::string, std::string>> ayuda() const
 	{
 		std::vector<std::pair<std::string, std::string>> r;
+		if (vista.sorteo) return r;   // (rama classic-duelo-arreglos: el sorteo trae su propia ayuda)
 		switch (estado) {
 		case NAVEGAR:
 			r.push_back({ "CRUZ", "Mover" });
+			if (duelo && foco.tipo == F_ZONA && (esTipo(foco.i, "cementerio") || esTipo(foco.i, "desterrado") || esTipo(foco.i, "fusion"))) {
+				r.push_back({ "X", "Ver lista" });   // rama classic-duelo-ui: visor de la zona
+			} else
 			if (tieneMenu(foco)) {
 				r.push_back({ "X", "Acciones" });
 			} else if (hayCarta(foco)) {
@@ -653,6 +728,7 @@ public:
 			if (hayCarta(foco)) r.push_back({ "T", "Detalle" });
 			if (!(duelo && bloqueado) || (duelo->activo == 0 && duelo->ganador < 0)) r.push_back({ "C", fasePedida ? "Fase (en espera)" : textoFase() });
 			r.push_back({ "STICK_R", "Cámara" });
+			if (duelo) r.push_back({ "L3", "Registro" });   // rama classic-duelo-ui: registro del duelo y visores
 			if (duelo) r.push_back({ "OPTIONS", "Pausa" });   // (rama classic-arreglos: menu de pausa)
 			break;
 		case MENU:
@@ -675,7 +751,10 @@ public:
 			r.push_back({ "X", "Sacrificar" });
 			r.push_back({ "O", "Atrás" });
 			break;
-		case DETALLE: r.push_back({ "O", "Cerrar" }); break;
+		case DETALLE:
+			if (desplDetalleMax > 0.0f) r.push_back({ "CRUZ", "Desplazar" });   // (rama classic-pulido: o el stick derecho)
+			r.push_back({ "O", "Cerrar" });
+			break;
 		case VOLANDO: break;
 		case ELEGIR_CARTA:
 			r.push_back({ "CRUZ", "Carta" });
@@ -845,7 +924,8 @@ private:
 		if (!duelo) return "Fase";
 		switch (duelo->fase) {
 		case ia::F_PRINCIPAL1: return duelo->turno <= 1 ? "Ir a Principal 2" : "Ir a la Batalla";
-		case ia::F_BATALLA: return "Ir a Principal 2";
+		case ia::F_BATALLA:   // (rama classic-elecciones: Amazoness Archers obliga a atacar antes)
+			return duelo->activo == 0 && duelo->efectos && ia::hayForzadosM2(*duelo) ? "Primero ataca (Amazoness Archers)" : "Ir a Principal 2";
 		case ia::F_PRINCIPAL2:
 		case ia::F_FINAL: return "Terminar turno";
 		default: return "Fase";
@@ -858,7 +938,10 @@ private:
 			ia::Jugada j;
 			j.tipo = ia::J_FASE;
 			if (!jugar || !jugar(j)) {
-				avisar(duelo->fase == ia::F_FINAL ? avisoDescarte() : std::string("No se puede"));
+				if (duelo->fase == ia::F_BATALLA && duelo->efectos && ia::hayForzadosM2(*duelo))   // rama classic-elecciones
+					avisar("Amazoness Archers: tus monstruos deben atacar este turno");
+				else
+					avisar(duelo->fase == ia::F_FINAL ? avisoDescarte() : std::string("No se puede"));
 			} else if (duelo->activo == 0 && duelo->fase == ia::F_FINAL && (int)duelo->l[0].mano.size() > ia::limiteMano(*duelo, 0)) {
 				avisar(avisoDescarte());
 			}
@@ -883,12 +966,15 @@ private:
 		cartaDetalle = c;
 		detalleDorso = dorso;
 		tDetalle = 0.0f;
+		zonaDetalle = f.tipo == F_ZONA ? f.i : -1;   // (rama classic-pulido)
+		desplDetalle = desplDetalleMax = 0.0f;
 		antesDetalle = estado == DETALLE ? NAVEGAR : estado;
 		anotar("detalle de '%s'%s", c.c_str(), dorso ? " (dorso)" : "");
 		cambiarEstado(DETALLE);
 	}
 
 	// ------------------------------------------------------------------------------------------ menus
+public:   // (rama classic-duelo-ui: las jugables de duelo_cadena.h preguntan por los menus)
 	bool tieneMenu(const Foco& f) const { return !opcionesPara(f).empty(); }
 
 	std::vector<Opcion> opcionesPara(const Foco& f) const
@@ -949,6 +1035,7 @@ private:
 		agregar(AC_CANCELAR, "Cancelar");
 		return r;
 	}
+private:
 
 	// ------------------------------------------------------------------------------------------ duelo real
 	// la zona de la mesa -> su indice en ia::Lado (0..4) o -1
@@ -1059,6 +1146,7 @@ private:
 			if (c->clase == "normal" || c->clase == "efecto") {
 				int nec = d.efectos ? ia::motorTributos(d, 0, c) : ia::Duelo::tributosPara(c);   // (los Dioses Egipcios: 3; Cost Down)
 				if (d.efectos && id == "fusilier_dragon_the_dual_mode_beast" && x.monstruos() < nec) nec = 0;
+				if (d.efectos && id == "swift_gaia_the_fierce_knight" && x.mano.size() == 1) nec = 0;   // (Swift Gaia: unica carta de la mano)
 				if (d.efectos && id == "behemoth_the_king_of_all_animals" && x.monstruos() == 1) nec = 1;   // (rama classic-efectos: Fusilier Dragon sin sacrificios)
 				if (c->subtipo == "toon" && x.tieneBocaArriba("toon_world")) {
 					const char* m = !principal ? fueraDeFase : x.monstruos() < nec ? "Faltan monstruos para el sacrificio"
@@ -1070,9 +1158,14 @@ private:
 				                : (d.efectos && nec > 0 && ia::motorSinSacrificios(d)) ? "No se puede sacrificar"
 				                : (d.efectos && !ia::motorPuedePagarMano(d, 0, 1)) ? "Faltan LP"
 				                : x.monstruos() < nec ? "Faltan monstruos para el sacrificio" : (nec == 0 && x.libre() < 0) ? "No hay zonas de monstruo libres" : "";
+				// rama classic-elecciones: The Last Warrior from Another Planet (o Scapegoat) prohibe invocar, no colocar:
+				// "Invocar" se ve desactivado con su motivo
+				const char* mInv = *m || !d.efectos || ia::motorPuedeInvocarM2(d, 0, 0) ? m
+				                   : ia::hayArribaM2(d, -1, "the_last_warrior_from_another_planet") ? "The Last Warrior from Another Planet: nadie puede invocar"
+				                                                                                     : "No puedes invocar este turno";
 				agregar(AC_INVOCAR, nec ? std::string(idioma::tr("Invocar")) + " (" + std::to_string(nec) + " " + idioma::tr(nec == 1 ? "sacrificio" : "sacrificios") + ")"
 				                        : std::string("Invocar"),
-				        !*m, m);
+				        !*mInv, mInv);
 				if (ia::Duelo::divina(c)) agregar(AC_COLOCAR_MONSTRUO, "Colocar boca abajo", false, "Un Dios no se puede colocar");
 				else agregar(AC_COLOCAR_MONSTRUO, "Colocar boca abajo", !*m, m);
 			} else if (c->clase == "ritual") {
@@ -1096,8 +1189,7 @@ private:
 				}
 				if (c->magia && d.base) {
 					for (int k = 0; k < (int)x.mano.size(); k++) {
-						auto it = d.base->rituales.find(x.mano[(size_t)k]);
-						if (it == d.base->rituales.end() || it->second != id) continue;
+						if (!d.base->ritualCon(x.mano[(size_t)k], id)) continue;   // (rama classic-probador: tambien las genericas)
 						ia::Jugada j;
 						j.tipo = ia::J_RITUAL;
 						j.mano = f.i;
@@ -1136,6 +1228,20 @@ private:
 			const ia::DefCarta* df = ia::defCarta(mo.id);
 			if (df && df->ignicion) opcionActivar(r, { 0, ia::EN_MONSTRUO, i }, mio, "Activar efecto");
 		}
+		if (d.efectos)   // rama classic-motor2: los X-Y-Z se invocan desterrando sus piezas del campo (sin Polymerization)
+			for (const std::string& fus : x.extra) {
+				std::vector<int> mats;
+				if (!ia::contactoPosible(d, 0, fus, &mats) || std::find(mats.begin(), mats.end(), i) == mats.end()) continue;
+				bool repetida = false;
+				for (const Opcion& o : r) repetida |= o.accion == AC_JUGADA && o.jugada.tipo == ia::J_FUSION && o.jugada.carta == fus;
+				if (repetida) continue;
+				ia::Jugada j;
+				j.tipo = ia::J_FUSION;
+				j.carta = fus;
+				j.tributos = mats;
+				const bool puede = principal && ia::motorPuedeInvocarM2(d, 0, 2);
+				agregar(AC_JUGADA, std::string(idioma::tr("Invocación especial")) + ": " + nombreDe(fus), puede, !principal ? fueraDeFase : "No se puede invocar ahora", j);
+			}
 		const char* mPos = !principal ? fueraDeFase : mo.llegoEsteTurno ? "Llegó este turno" : mo.cambioPosicion ? "Ya cambió de posición este turno" : "";
 		if (mo.bocaAbajo) {
 			agregar(AC_VOLTEAR_MONSTRUO, "Voltear (invocación)", !*mPos, mPos);
@@ -1244,6 +1350,7 @@ private:
 			std::vector<ia::Lugar> c;
 			for (int k = 0; k < (int)duelo->l[0].mano.size(); k++) {
 				if ((f.donde == ia::EN_MANO && k == f.i) || std::find(armado.descartes.begin(), armado.descartes.end(), k) != armado.descartes.end()) continue;
+				if (!ia::descarteVale(*duelo, ia::cartaEn(*duelo, f), duelo->l[0].mano[(size_t)k])) continue;   // (Light of Judgment: un LUZ)
 				c.push_back({ 0, ia::EN_MANO, k });
 			}
 			etapaArmado = 0;
@@ -1310,6 +1417,9 @@ private:
 		case ia::V_FASE_FINAL: return idioma::tr("Fase final del rival");
 		case ia::V_INICIO_BATALLA: return idioma::tr("El rival entra en la fase de batalla");
 		case ia::V_PASO_DANNO: return std::string(idioma::tr("Paso de daño")) + ": " + nombreDe(e.ventana.carta);
+		case ia::V_ESPERA: return idioma::tr(e.ventana.lado == 1 ? "Fase de espera del rival" : "Tu fase de espera");   // rama classic-motor2
+		case ia::V_FIN_BATALLA: return idioma::tr("El rival termina la fase de batalla");
+		case ia::V_COLOCADO: return idioma::tr("El rival colocó un monstruo");
 		default: return idioma::tr("¿Activar una carta?");
 		}
 	}
@@ -1422,6 +1532,7 @@ private:
 			const std::string id = origenMano >= 0 && origenMano < (int)manoJ.size() ? manoJ[(size_t)origenMano] : "";
 			tributosFaltan = duelo->efectos ? ia::motorTributos(*duelo, 0, duelo->carta(id)) : ia::Duelo::tributosPara(duelo->carta(id));
 			if (duelo->efectos && id == "fusilier_dragon_the_dual_mode_beast" && duelo->l[0].monstruos() < tributosFaltan) tributosFaltan = 0;   // (Fusilier Dragon)
+			if (duelo->efectos && id == "swift_gaia_the_fierce_knight" && duelo->l[0].mano.size() == 1) tributosFaltan = 0;   // (Swift Gaia: unica de la mano)
 			if (duelo->efectos && id == "moisture_creature" && duelo->l[0].monstruos() >= 3 && ia::contarMT(*duelo, 1) > 0) tributosFaltan = 3;   // (Moisture Creature: con 3)
 			if (duelo->efectos && id == "gilford_the_lightning" && duelo->l[0].monstruos() >= 3 && duelo->l[1].monstruos() > 0) tributosFaltan = 3;   // (Gilford: con 3)
 			if (duelo->efectos && id == "behemoth_the_king_of_all_animals" && duelo->l[0].monstruos() == 1) tributosFaltan = 1;   // (Behemoth: con 1)

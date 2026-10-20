@@ -43,6 +43,7 @@ Magician's Valkyria|3|tea,mana,yami_yugi
 Maiden with Eyes of Blue|3|kisara,sacerdote_seto
 Marshmallon|3|yugi
 Megazowler|3|rex_raptor
+Mischief of the Time Goddess|3|leon
 Multiply|3|yugi
 Mystic Box|3|arkana,aknamkanon,altos_sacerdotes,mahad
 Mystical Beast of Serket|3|marik
@@ -57,9 +58,10 @@ Prinzessin|3|leon
 Pumpkin Carriage|3|leon
 Queen's Knight|3|yugi
 Reaper Scythe - Dreadscythe|3|rafael
-Ride of the Valkyries|3|zigfried
+Ride of the Valkyries|3|leon,zigfried
 Rocket Warrior|3|joey,valon
 Satellite Cannon|3|bandit_keith,alister
+Sentinel of the Seas|3|mako
 Shrink|3|mokuba,kaiba
 Slifer the Sky Dragon|1|yami_yugi
 Sword Arm of Dragon|3|rex_raptor
@@ -71,7 +73,7 @@ Toon Dark Magician Girl|3|pegasus
 Ultimate Tyranno|3|rex_raptor
 Valkyrie Brunhilde|3|zigfried
 Valkyrie Dritte|3|leon,zigfried
-Valkyrie Erste|3|zigfried
+Valkyrie Erste|3|leon,zigfried
 Valkyrie Funfte|3|zigfried
 Valkyrie Sechste|3|zigfried
 Valkyrie Vierte|3|zigfried

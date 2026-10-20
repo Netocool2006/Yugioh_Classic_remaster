@@ -37,8 +37,19 @@
 #include "stb_image.h"   // la implementacion ya esta en la base (VulkanglTFModel.cpp)
 #include "control.h"     // rama mando: el estado de la mesa, el foco y los menus (sin Vulkan)
 #include "idioma.h"      // rama classic-idioma: textos ES/EN (tr) y cartas en ingles
+#include "opciones.h"    // rama classic-portada: opciones::permitirProhibidas() (Opciones del menu)
 #include "constructor.h" // rama classic-constructor: la pantalla "Construir mazo" (logica; se dibuja en constructor_ui.h)
+#include "galeria.h"     // rama classic-galeria: la galeria de figuras 3D (logica; se dibuja en galeria_ui.h)
+#include "resultado.h"   // rama classic-resultado: los datos de la pantalla de resultado (resultado_ui.h)
+#include "entrada_clave.h"   // rama classic-cartas-clave: entrada especial de las cartas clave (entrada_clave_ui.h)
 #include "personajes.h"  // rama classic-personajes: los personajes del anime (modo historia); retratos en personajes_ui.h
+#include "duelo_visores.h" // rama classic-duelo-ui: registro, visores de zonas, cadena y jugables (duelo_consulta_ui.h)
+#include "historia_dialogos.h"   // rama classic-historia: dialogos del modo historia, final y Modo Desafio
+#include "tutorial.h"          // rama classic-historia: las reglas del duelo (paginas)
+#include "cosmeticos.h"        // rama classic-extras: fundas, tapetes, controles (Personalizacion)
+#include "estadisticas.h"      // rama classic-extras: estadisticas del jugador
+#include <atomic>
+#include <thread>
 
 namespace interfaz {
 
@@ -87,6 +98,7 @@ static const Zona ZONAS[] = {
 	{ "rival_monstruo_4", -5.4f, -2.2f, "monstruo" }, { "rival_magia_4", -5.4f, -5.5f, "magia" },
 	{ "rival_campo", 8.2f, -2.2f, "campo" }, { "rival_fusion", 8.2f, -5.5f, "fusion" },
 	{ "rival_cementerio", -8.2f, -2.2f, "cementerio" }, { "rival_mazo", -8.2f, -5.5f, "mazo" },
+	{ "jugador_desterrado", 10.9f, 2.2f, "desterrado" }, { "rival_desterrado", -10.9f, -2.2f, "desterrado" },   // rama classic-duelo-ui
 };
 constexpr size_t NUM_ZONAS = sizeof(ZONAS) / sizeof(ZONAS[0]);
 constexpr float ZONA_ANCHO = 1.16f * ESCALA, ZONA_ALTO = 1.62f * ESCALA;
@@ -216,6 +228,7 @@ public:
 		leerEntorno();
 		cargarCartas();
 		cargarDorso();
+		empezarFundas();   // rama classic-extras: las fundas por codigo, en otro hilo (cosmeticos_ui.h)
 		crearAtlas();
 		crearDescriptores();
 		crearPipelines(formatoColor, formatoProf, cache, shaders);
@@ -234,6 +247,7 @@ public:
 			return;
 		}
 		vkDeviceWaitIdle(dev);
+		liberarFundas();   // rama classic-extras
 		for (auto& b : vertices) {
 			b.destroy();
 		}
@@ -357,6 +371,7 @@ public:
 	// rama classic-constructor: la pantalla "Construir mazo" (si esta abierta se dibuja en lugar del duelo) y las
 	// cartas que quedan en cada mazo
 	void conectarConstructor(const constructor::Constructor* c) { cons = c; }
+	void conectarGaleria(const galeria::Galeria* g) { gal = g; }   // rama classic-galeria
 	void contarMazos(int jugador, int rival, int fusionJ)
 	{
 		mazoJ = std::max(0, jugador);
@@ -404,6 +419,7 @@ public:
 		t += dt;
 		procesarCargas();   // rama classic-constructor: caras a pedido
 		cargarRetratos();   // rama classic-personajes: retratos a pedido (personajes_ui.h)
+		cargarPortada(dt);  // rama classic-portada (portada_ui.h)
 		demo();
 		actualizarMando();   // rama mando: el foco, la fase y los cementerios vienen de control.h
 		if (libre && !fijo && !ctl) {
@@ -488,6 +504,7 @@ public:
 		H = alto;
 		s = alto / 1080.0f;
 		vp = vistaProy;
+		subirFundas();   // rama classic-extras: en cuanto el hilo las termino
 		v.clear();
 		lotes.clear();
 		construirObjetivos();
@@ -533,6 +550,7 @@ private:
 	mutable std::unordered_map<std::string, int> indiceCartas;   // id -> indice en cartas (buscarCarta)
 	uint64_t cuadroN{ 10 };                                      // cuadros (la cache de caras)
 	const constructor::Constructor* cons{ nullptr };             // rama classic-constructor
+	const galeria::Galeria* gal{ nullptr };                      // rama classic-galeria
 	std::vector<std::string> monstruos_;   // monstruos de cartas_ui.txt (mano de prueba)
 	Golpe golpe;   // el ataque plano en curso (golpePlano)
 	// dorso original (dorso.png) y su mitad para el tablero (sin mipmaps: la de tamano completo parpadearia lejos)
@@ -944,7 +962,7 @@ private:
 		m.anisotropyEnable = disp->enabledFeatures.samplerAnisotropy;
 		m.maxAnisotropy = m.anisotropyEnable ? std::min(16.0f, disp->properties.limits.maxSamplerAnisotropy) : 1.0f;
 		VK_CHECK_RESULT(vkCreateSampler(dev, &m, nullptr, &muestreador));
-		const uint32_t total = 1 + 2 * (uint32_t)cartas.size() + 2 + 2 + MAX_HD + MAX_RETRATOS;   // (+ retratos de personajes)   // (+ caras HD del constructor)   // atlas, caras y minis, reserva, dorso y su mini
+		const uint32_t total = 1 + 2 * (uint32_t)cartas.size() + 2 + 2 + MAX_HD + MAX_RETRATOS + 7 + 2 * cosmeticos::NUM_FUNDAS;   // (+ portada y menu: portada_ui.h)   // (+ retratos de personajes)   // (+ caras HD del constructor)   // atlas, caras y minis, reserva, dorso y su mini
 		std::vector<VkDescriptorPoolSize> tam = { vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, total) };
 		VkDescriptorPoolCreateInfo pi = vks::initializers::descriptorPoolCreateInfo(tam, total);
 		VK_CHECK_RESULT(vkCreateDescriptorPool(dev, &pi, nullptr, &pool));
@@ -1050,7 +1068,7 @@ private:
 	{
 		const glm::vec4 lado = rival ? CARMESI : CIAN;
 		if (hayDorso) {
-			usar(mini ? setDorsoMini : setDorso, en3D);
+			usar(rival ? (mini ? setDorsoMini : setDorso) : setDorsoJugador(mini), en3D);   // (rama classic-extras: la funda del jugador)
 			return { glm::vec4(glm::vec3(brillo), 1.0f), glm::vec4(glm::vec3(lado) * 0.55f, 1.0f), glm::vec4(0.0f, 0.0f, 0.0f, 1.0f) };
 		}
 		usar(setAtlas, en3D);
@@ -1372,12 +1390,19 @@ private:
 	// ------------------------------------------------------------------------------------------ armar el cuadro
 	void construir()
 	{
+		if (gal && gal->abierta) {
+			dibujarGaleria();   // rama classic-galeria: la figura 3D va detras (galeria_juego.h)
+			dibujarAvisoGuardado();
+			return;
+		}
 		if (cons && cons->abierto) {
 			dibujarConstructor();   // rama classic-constructor: tapa todo el duelo
+			dibujarAvisoGuardado();
 			return;
 		}
 		dibujarTablero3D();
 		dibujarCartasMundo();
+		dibujarJugablesMesa();   // rama classic-duelo-ui: el brillo azul de lo que se puede jugar (duelo_consulta_ui.h)
 		dibujarEtiquetasTablero();
 		dibujarAtkDef();
 		dibujarManoRival();
@@ -1387,9 +1412,48 @@ private:
 		dibujarSelectorCamara();
 		dibujarMarco();
 		dibujarChispas();
+		dibujarCadenaPila();     // rama classic-duelo-ui: la pila de la cadena (C1, C2...)
 		dibujarMandoEncima();   // rama mando: carta que vuela, menu, fase, avisos, detalle y barra de ayuda
+		dibujarEntradaClave();   // rama classic-cartas-clave: el corte 2D de la entrada de una carta clave
 		dibujarPantallaDuelo();  // rama classic-integracion: elegir rival, turno del rival, resultado
+		dibujarConsulta();       // rama classic-duelo-ui: registro y visores de zonas (L3 / X en la zona)
+		dibujarMenuPrincipal();  // rama classic-menus: menu principal (tapa la mesa)
+		dibujarPersonalizacion();   // rama classic-extras: Opciones > Personalizacion (cosmeticos_ui.h)
+		dibujarPortada();        // rama classic-portada: la portada al arrancar (tapa todo) y el menu desde negro
+		dibujarEscenaHistoria();   // rama classic-historia: dialogo antes del duelo, final, linea de cierre y atajos
+		dibujarTutorial();         // rama classic-historia: las reglas del duelo
 		dibujarPausa();          // rama classic-arreglos: el menu de pausa (OPTIONS corto), encima de todo
+		dibujarAvisoGuardado();  // rama classic-pulido: no se pudo guardar / sin carpeta de datos (en cualquier pantalla)
+	}
+
+	// rama classic-pulido: aviso de guardado (guardado.h) arriba al centro, en cualquier pantalla, unos segundos: si
+	// /data/yugioh_classic no se pudo crear o si fallo la escritura de un archivo
+	int serieAvisoGuardado{ 0 };
+	float tAvisoGuardado{ 99.0f };
+	void dibujarAvisoGuardado()
+	{
+		const guardado::Estado& e = guardado::estado();
+		if (e.serie != serieAvisoGuardado) {
+			serieAvisoGuardado = e.serie;
+			tAvisoGuardado = 0.0f;
+		}
+		tAvisoGuardado += dtCuadro;
+		const float dura = 7.0f;
+		if (e.serie == 0 || tAvisoGuardado > dura) return;
+		const float a = suave(0.0f, 0.25f, tAvisoGuardado) * (1.0f - suave(dura - 0.6f, dura, tAvisoGuardado));
+		if (a < 0.01f) return;
+		const std::string msg = e.ultimoFallo ? std::string(idioma::tr("No se pudo guardar")) + " " + e.archivo
+		                                      : std::string(idioma::tr("No se pudo crear /data/yugioh_classic: el progreso podría no guardarse"));
+		auto A = [&](glm::vec4 c) { return glm::vec4(glm::vec3(c), c.a * a); };
+		const float tt = 24.0f * s;
+		const float tw = medir(F_TITULO, msg, tt, 1.0f);
+		const float w = tw + 80.0f * s, h = 52.0f * s;
+		const float x = (W - w) * 0.5f, y = 28.0f * s;
+		usar(setAtlas, false);
+		caja(x, y, w, h, 18.0f * s, PANEL, A(glm::vec4(0.16f, 0.03f, 0.04f, 0.92f)), A(CARMESI), h * 0.5f, glm::vec4(1.4f * s, 1.0f, 0.2f, 14.0f * s));
+		rect(glm::vec2(x + 28.0f * s, y + h * 0.5f), glm::vec2(15.0f * s), 0.0f, 8.0f * s, ORBE, A(CARMESI), A(glm::vec4(0.5f, 0.05f, 0.05f, 1.0f)), 0.0f,
+		     glm::vec4(0.9f, 1.0f, 0.0f, 0.0f));
+		texto(F_TITULO, msg, x + 50.0f * s, y + h * 0.5f + 8.0f * s, tt, A(BLANCO), NADA, glm::vec3(0.0f), 0, 1.0f);
 	}
 
 	// lo que hay en una zona del duelo de prueba
@@ -1417,6 +1481,7 @@ private:
 		if (tipo == "fusion") return glm::vec4(0.72f, 0.42f, 1.0f, 1.0f);
 		if (tipo == "cementerio") return glm::vec4(0.62f, 0.75f, 0.95f, 1.0f);
 		if (tipo == "mazo") return CIAN;
+		if (tipo == "desterrado") return glm::vec4(1.0f, 0.62f, 0.30f, 1.0f);   // rama classic-duelo-ui
 		return glm::vec4(0.45f, 1.0f, 0.75f, 1.0f);
 	}
 
@@ -1590,7 +1655,7 @@ private:
 	{
 		for (int i = 0; i < (int)NUM_ZONAS; i++) {
 			const std::string tipo = ZONAS[i].tipo;
-			if (tipo != "mazo" && tipo != "fusion" && tipo != "cementerio") continue;
+			if (tipo != "mazo" && tipo != "fusion" && tipo != "cementerio" && tipo != "desterrado") continue;
 			const bool rival = strncmp(ZONAS[i].id, "rival", 5) == 0;
 			const glm::vec4 c = colorZona(tipo);
 			// la etiqueta flota sobre el borde lejano de la zona (o sobre la pila del mazo)
@@ -1602,7 +1667,11 @@ private:
 				numero = std::to_string(rival ? mazoR : mazoJ);
 			} else if (tipo == "fusion") {
 				titulo = "FUSIÓN";
-				numero = std::to_string(rival ? PILA_FUSION_R : pilaFusionJ);
+				numero = std::to_string(ctl && ctl->duelo ? (int)(rival ? ctl->extraR : ctl->extraJ).size() : rival ? PILA_FUSION_R : pilaFusionJ);   // (rama classic-duelo-ui: el del rival, real)
+			} else if (tipo == "desterrado") {   // rama classic-duelo-ui
+				if (!ctl || !ctl->duelo) continue;
+				titulo = idioma::t("DESTERRADAS", "BANISHED");
+				numero = std::to_string((rival ? ctl->desterradosR : ctl->desterradosJ).size());
 			} else {
 				titulo = "CEMENTERIO";
 				numero = std::to_string(rival ? cementerioR : cementerioJ);
@@ -1716,6 +1785,7 @@ private:
 	void dibujarManoRival()
 	{
 		for (int k = 0; k < nManoR(); k++) {
+			if (ctl && ctl->robo.activo && ctl->robo.rival && ctl->robo.indice == k) continue;   // (rama classic-duelo-arreglos: viene volando)
 			glm::vec2 c; float a, e;
 			cartaManoR(k, c, a, e);
 			const glm::vec2 tam = glm::vec2(120.0f, 174.0f) * s * e;
@@ -1736,7 +1806,9 @@ private:
 			glm::vec2 c; float a, e;
 			cartaManoJ(k, c, a, e);
 			posManoJ[k] = c;   // rama mando: de aqui sale volando la carta que se juega
+			if (ctl && ctl->robo.activo && !ctl->robo.rival && ctl->robo.indice == k) return;   // (rama classic-duelo-arreglos: viene volando)
 			const glm::vec2 tam = glm::vec2(150.0f, 218.0f) * s * e;
+			brilloJugableMano(k, c, tam, a);   // rama classic-duelo-ui
 			usar(setAtlas, false);
 			rect(c, tam, a, 22.0f * s, PANEL, glm::vec4(0, 0, 0, 0.55f), NADA, 10.0f * s, glm::vec4(0, 0, 0, 14.0f * s));
 			if (ci >= 0 && listaCarta(ci)) {
@@ -1843,13 +1915,21 @@ private:
 			r.color = colorZona("fusion");
 			return r;
 		}
-		if (tipo == "cementerio") {
+		if (tipo == "cementerio" || tipo == "desterrado") {   // (rama classic-duelo-ui: tambien las desterradas)
 			if (ctl) {
-				const auto& pila = rival ? ctl->cementerioR : ctl->cementerioJ;
+				const auto& pila = tipo == "desterrado" ? (rival ? ctl->desterradosR : ctl->desterradosJ) : rival ? ctl->cementerioR : ctl->cementerioJ;
 				if (!pila.empty()) {
 					r.carta = buscarCarta(pila.back());   // la de arriba de la pila
 					return r;
 				}
+			}
+			if (tipo == "desterrado") {
+				r.titulo = rival ? idioma::t("DESTERRADAS DEL RIVAL", "OPPONENT'S BANISHED") : idioma::t("TUS DESTERRADAS", "YOUR BANISHED");
+				r.subtitulo = "Vacío";
+				r.texto = idioma::t("Las cartas desterradas por efectos quedan aquí, fuera del duelo. X: ver la lista.",
+				                    "Cards banished by effects stay here, out of the duel. X: view the list.");
+				r.color = colorZona("desterrado");
+				return r;
 			}
 			r.titulo = rival ? "CEMENTERIO DEL RIVAL" : "TU CEMENTERIO";
 			r.subtitulo = "Vacío";
@@ -2366,9 +2446,9 @@ private:
 		for (int i = 0; i < (int)NUM_ZONAS; i++) {
 			const std::string tipo = ZONAS[i].tipo;
 			const bool rival = strncmp(ZONAS[i].id, "rival", 5) == 0;
-			if (tipo == "cementerio") {
+			if (tipo == "cementerio" || tipo == "desterrado") {   // (rama classic-duelo-ui: tambien las desterradas)
 				// la carta de arriba del cementerio, boca arriba sobre una pila tan alta como las cartas que tiene
-				const auto& pila = rival ? ctl->cementerioR : ctl->cementerioJ;
+				const auto& pila = tipo == "desterrado" ? (rival ? ctl->desterradosR : ctl->desterradosJ) : rival ? ctl->cementerioR : ctl->cementerioJ;
 				if (!pila.empty()) {
 					int ci = buscarCarta(pila.back());
 					if (ci >= 0 && !listaCarta(ci)) ci = -1;
@@ -2380,7 +2460,10 @@ private:
 			const control::Celda& k = ctl->zonas[i];
 			const Ocupa* h = horneada(ZONAS[i].id);
 			const bool anim = k.tVolteo < D || k.tGiro < D || k.tLlega < 0.4f || k.tActiva < 1.5f || (golpe.t >= 0.0f && (i == golpe.atacante || i == golpe.objetivo));
-			const bool igual = h && !k.vacia() && h->bocaAbajo == k.bocaAbajo && h->defensa == k.defensa && (h->bocaAbajo || k.carta == h->carta);
+			// rama classic-duelo-arreglos (fallo "la carta colocada desaparece"): con el duelo real la carta de la mesa se dibuja
+			// siempre, con la casilla de vidrio que tapa la del tablero; antes, si coincidia con la horneada en el tablero.glb,
+			// no se dibujaba y quedaba a merced de lo que pinta encima del tapete (capa de la carta de campo, bosque, entorno)
+			const bool igual = !ctl->duelo && h && !k.vacia() && h->bocaAbajo == k.bocaAbajo && h->defensa == k.defensa && (h->bocaAbajo || k.carta == h->carta);
 			if (tipo != "magia" && igual && !anim) continue;   // la del tablero ya es esa (las magias se dibujaban siempre encima)
 			if (h && (k.vacia() || !igual || anim)) {
 				// casilla de vidrio que tapa la carta del tablero (vacia, girada o animandose)
@@ -2439,13 +2522,84 @@ private:
 	{
 		if (!ctl) return;
 		dibujarDanio();
+		dibujarRobo();        // rama classic-duelo-arreglos: del mazo a la mano
 		dibujarVuelo();
 		dibujarObjetivoAtaque();
 		dibujarMenuMando();
 		dibujarFaseMando();
 		dibujarAvisoMando();
 		dibujarDetalleMando();
+		dibujarBotonFase();   // rama classic-duelo-arreglos: SIGUIENTE FASE / TERMINAR TURNO con su boton
 		dibujarAyudaMando();
+	}
+
+	// rama classic-duelo-arreglos: la carta que se roba sale del mazo (arriba de la pila), sube en arco y va a su lugar en
+	// la mano; la del jugador se da vuelta en el aire (dorso -> cara), la del rival llega boca abajo
+	int serieRobo{ -1 };
+	glm::vec2 roboDesde{ 0.0f };
+	void dibujarRobo()
+	{
+		const control::Mando::Robo& ro = ctl->robo;
+		if (!ro.activo || ro.indice < 0) return;
+		const bool rival = ro.rival;
+		if (ro.serie != serieRobo) {
+			serieRobo = ro.serie;
+			const Zona* z = zonaPorId(rival ? "rival_mazo" : "jugador_mazo");
+			const int n = rival ? mazoR : mazoJ;
+			roboDesde = z ? aPantalla(proyectar(glm::vec3(z->x * ESCALA, 0.016f * (float)n + 0.05f, z->z * ESCALA))) : glm::vec2(W * 0.85f, rival ? 0.0f : H);
+		}
+		glm::vec2 p1;
+		float a1, e1;
+		if (rival) cartaManoR(ro.indice, p1, a1, e1);
+		else cartaManoJ(ro.indice, p1, a1, e1);
+		const float pi = glm::pi<float>();
+		const float u = suave(0.0f, 1.0f, ro.t);
+		const glm::vec2 p = glm::mix(roboDesde, p1, u) + glm::vec2(0.0f, (rival ? 90.0f : -150.0f) * s * sinf(pi * u));
+		const glm::vec2 tam1 = (rival ? glm::vec2(120.0f, 174.0f) : glm::vec2(150.0f, 218.0f)) * s * e1;
+		glm::vec2 tam = glm::mix(tam1 * 0.55f, tam1, u) * (1.0f + 0.12f * sinf(pi * u));
+		const float ang = glm::mix(rival ? pi : 0.0f, a1, u);
+		const bool cara = !rival && u > 0.5f;
+		if (!rival) tam.x *= glm::max(fabsf(cosf(pi * u)), 0.04f);   // (se da vuelta a mitad de camino)
+		usar(setAtlas, false);
+		rect(p + glm::vec2(0.0f, 12.0f * s), tam, ang, 18.0f * s, PANEL, glm::vec4(0, 0, 0, 0.45f), NADA, 9.0f * s, glm::vec4(0, 0, 0, 12.0f * s));
+		const int ci = cara ? buscarCarta(ro.carta) : -1;
+		if (ci >= 0 && listaCarta(ci)) {
+			usar(cartas[ci].setMini, false);
+			const float uu = 0.5f / cartas[ci].mini.width, vv = 0.5f / cartas[ci].mini.height;
+			rect(p, tam, ang, 0.0f, IMAGEN, glm::vec4(glm::vec3(1.05f), 1.0f), CIAN, 8.0f * s, glm::vec4(0.5f, 1.0f, 0.2f, 0.0f), glm::vec2(uu, vv),
+			     glm::vec2(1.0f - uu, 1.0f - vv));
+		} else {
+			const Dorso dz = usarDorso(false, false, rival, 1.0f, 0.0f);
+			rect(p, tam, ang, 0.0f, DORSO, dz.col, dz.col2, 8.0f * s, dz.extra, uvDorso0(false), uvDorso1(false));
+		}
+		usar(setAtlas, false);
+		// estela de luz
+		const glm::vec4 brillo = rival ? CARMESI : CIAN;
+		rect(p, tam * 1.3f, ang, 0.0f, PARTICULA, glm::vec4(glm::vec3(brillo) * 0.25f * sinf(pi * u), 1.0f), NADA, 0.0f, glm::vec4(0.0f));
+	}
+
+	// rama classic-duelo-arreglos: el boton para pasar de fase / terminar el turno, siempre a la vista en TU turno (a la
+	// derecha, sobre la barra de ayuda): el icono del cuadrado, "SIGUIENTE FASE" o "TERMINAR TURNO" y a donde pasa
+	void dibujarBotonFase()
+	{
+		const char* txt = ctl->botonFase();
+		if (!txt || !*txt) return;
+		const bool fin = strcmp(txt, "Terminar turno") == 0;
+		const std::string titulo = idioma::tr(fin ? "TERMINAR TURNO" : "SIGUIENTE FASE");
+		const std::string sub = fin ? std::string(idioma::tr("Le toca al rival")) : std::string(idioma::tr(txt));
+		const float r = 20.0f * s, h = 74.0f * s;
+		const float tw = glm::max(medir(F_NUMEROS, titulo, 24.0f * s, 2.0f), medir(F_TITULO, sub, 19.0f * s, 1.0f));
+		const float w = tw + 2.0f * r + 64.0f * s;
+		const float x0 = W - 22.0f * s - w, y0 = H - 22.0f * s - 42.0f * s - 16.0f * s - h - 54.0f * s;
+		const float lat = 0.75f + 0.25f * sinf(t * 3.0f);
+		const glm::vec4 borde = fin ? CARMESI : ORO;
+		usar(setAtlas, false);
+		caja(x0, y0, w, h, 22.0f * s, PANEL, glm::vec4(glm::vec3(VIDRIO), 0.86f), glm::vec4(glm::vec3(borde) * lat, 1.0f), h * 0.5f,
+		     glm::vec4(1.5f * s, 1.1f, 0.15f, 16.0f * s));
+		iconoBoton(glm::vec2(x0 + 22.0f * s + r, y0 + h * 0.5f), "C", r);
+		const float tx = x0 + 22.0f * s + 2.0f * r + 18.0f * s;
+		texto(F_NUMEROS, titulo, tx, y0 + 33.0f * s, 24.0f * s, glm::vec4(1.0f, 0.95f, 0.8f, 1.0f), borde, glm::vec3(0.4f, 0.0f, 0.6f), 0, 2.0f);
+		texto(F_TITULO, sub, tx, y0 + 60.0f * s, 19.0f * s, glm::vec4(0.82f, 0.88f, 0.96f, 1.0f), NADA, glm::vec3(0.0f), 0, 1.0f);
 	}
 
 	// la carta que vuela de la mano a su zona: en arco, achicandose a su tamanno en la mesa; si se coloca, se da
@@ -2717,21 +2871,100 @@ private:
 		texto(F_TEXTO, tipo, tx, ty, 28.0f * s, A(glm::vec4(0.72f, 0.86f, 1.0f, 1.0f)));
 		if (monstruo) {
 			ty += 56.0f * s;
-			texto(F_TITULO, "ATK", tx, ty - 4.0f * s, 21.0f * s, A(GRIS), NADA, glm::vec3(0.0f), 0, 2.0f);
-			texto(F_NUMEROS, std::to_string(k->atk), tx + 52.0f * s, ty, 40.0f * s, A(glm::vec4(1.0f, 0.93f, 0.7f, 1.0f)), A(ORO), glm::vec3(0.45f, 0.0f, 0.8f));
-			texto(F_TITULO, "DEF", tx + tw * 0.5f, ty - 4.0f * s, 21.0f * s, A(GRIS), NADA, glm::vec3(0.0f), 0, 2.0f);
-			texto(F_NUMEROS, std::to_string(k->def), tx + tw * 0.5f + 54.0f * s, ty, 40.0f * s, A(glm::vec4(0.8f, 0.95f, 1.0f, 1.0f)), A(CIAN), glm::vec3(0.45f, 0.0f, 0.8f));
+			// rama classic-pulido: en el duelo, el ATK/DEF ACTUAL (equipos, campos y efectos, como los rotulos de la mesa);
+			// si cambio, en verde (subio) o rojo (bajo) y el impreso al lado, en gris y tachado
+			int va = k->atk, vd = k->def;
+			const int zd = ctl->zonaDetalle;
+			if (zd >= 0 && zd < (int)NUM_ZONAS && strcmp(ZONAS[zd].tipo, "monstruo") == 0 && ctl->zonas[zd].carta == ctl->cartaDetalle && !ctl->zonas[zd].bocaAbajo) {
+				const int bono = bonoBosque > 0.5f && potenciaBosque(k->id) ? 200 : 0;   // carta de campo Bosque
+				va += bono;
+				vd += bono;
+				if (statsZona) statsZona(ZONAS[zd].id, va, vd);
+			}
+			auto valor = [&](const char* rotulo, int actual, int impreso, float x, glm::vec4 claro, glm::vec4 borde) {
+				texto(F_TITULO, rotulo, x, ty - 4.0f * s, 21.0f * s, A(GRIS), NADA, glm::vec3(0.0f), 0, 2.0f);
+				const float xn = x + 53.0f * s;
+				if (actual != impreso) {
+					const bool sube = actual > impreso;
+					claro = sube ? glm::vec4(0.75f, 1.0f, 0.65f, 1.0f) : glm::vec4(1.0f, 0.72f, 0.68f, 1.0f);
+					borde = sube ? glm::vec4(0.35f, 0.95f, 0.3f, 1.0f) : glm::vec4(1.0f, 0.3f, 0.25f, 1.0f);
+				}
+				const std::string sa = std::to_string(actual);
+				texto(F_NUMEROS, sa, xn, ty, 40.0f * s, A(claro), A(borde), glm::vec3(0.45f, 0.0f, 0.8f));
+				if (actual == impreso) return;
+				const std::string si = std::to_string(impreso);
+				const float xo = xn + medir(F_NUMEROS, sa, 40.0f * s) + 12.0f * s, wo = medir(F_NUMEROS, si, 24.0f * s);
+				const glm::vec4 gris(0.55f, 0.58f, 0.64f, 0.9f);
+				texto(F_NUMEROS, si, xo, ty, 24.0f * s, A(gris));
+				caja(xo - 2.0f * s, ty - 10.0f * s, wo + 4.0f * s, 2.5f * s, 0.0f, PANEL, A(gris), NADA, 0.0f, glm::vec4(0.0f));
+			};
+			valor("ATK", va, k->atk, tx, glm::vec4(1.0f, 0.93f, 0.7f, 1.0f), ORO);
+			valor("DEF", vd, k->def, tx + tw * 0.5f, glm::vec4(0.8f, 0.95f, 1.0f, 1.0f), CIAN);
 		}
 		ty += 30.0f * s;
 		rect(glm::vec2(px + pw * 0.5f, ty), glm::vec2(tw, 3.0f * s), 0.0f, 6.0f * s, LINEA, A(acento), NADA, 0.0f, glm::vec4(2.0f, 0.3f, 0, 0));
 		ty += 42.0f * s;
-		parrafo(F_TEXTO, k->vDesc(), tx, ty, 27.0f * s, tw, 33.0f * s, (int)((py + ph - 24.0f * s - ty) / (33.0f * s)) + 1, A(glm::vec4(0.86f, 0.9f, 0.96f, 1.0f)));
+		// rama classic-pulido: el texto se desplaza (cruz o stick derecho: ctl->desplDetalle, en lineas) con su barra
+		const float tamT = 27.0f * s, inter = 33.0f * s, anchoT = tw - 18.0f * s;
+		const int visibles = glm::max(1, (int)((py + ph - 24.0f * s - ty) / inter) + 1);
+		const std::vector<std::string> lineas = cortarLineas(F_TEXTO, k->vDesc(), tamT, anchoT);
+		const int sobran = glm::max(0, (int)lineas.size() - visibles);
+		ctl->desplDetalleMax = (float)sobran;
+		const float d = glm::clamp(ctl->desplDetalle, 0.0f, (float)sobran);
+		const int primera = (int)floorf(d);
+		const float frac = d - (float)primera, yFin = ty + (float)(visibles - 1) * inter;
+		{
+			const bool antes = crudo;
+			crudo = true;   // (ya traducido: cortarLineas)
+			for (int i = 0; i <= visibles && primera + i < (int)lineas.size(); i++) {
+				const float y = ty + ((float)i - frac) * inter;
+				const float al = glm::clamp(1.0f - (ty - y) / inter, 0.0f, 1.0f) * glm::clamp(1.0f - (y - yFin) / inter, 0.0f, 1.0f);
+				if (al < 0.02f) continue;
+				texto(F_TEXTO, lineas[(size_t)(primera + i)], tx, y, tamT, A(glm::vec4(0.86f, 0.9f, 0.96f, al)));
+			}
+			crudo = antes;
+		}
+		if (sobran > 0) {   // barra de desplazamiento a la derecha del texto
+			const float bx = px + pw - 22.0f * s, by = ty - tamT, bh = yFin + 10.0f * s - by;
+			const float th = glm::max(36.0f * s, bh * (float)visibles / (float)lineas.size());
+			const float tyb = by + (bh - th) * (d / (float)sobran);
+			caja(bx, by, 6.0f * s, bh, 3.0f * s, PANEL, A(glm::vec4(1.0f, 1.0f, 1.0f, 0.12f)), NADA, 0.0f, glm::vec4(0.0f));
+			caja(bx - 1.0f * s, tyb, 8.0f * s, th, 4.0f * s, PANEL, A(glm::vec4(glm::vec3(glm::mix(CIAN, acento, 0.5f)), 0.9f)), NADA, 0.0f, glm::vec4(0.0f));
+		}
+	}
+
+	// rama classic-pulido: corta un texto en lineas por palabras (como parrafo, sin dibujar ni recortar)
+	std::vector<std::string> cortarLineas(int fu, const std::string& original, float tam, float ancho)
+	{
+		const std::string txt = trd(original);
+		const bool antes = crudo;
+		crudo = true;
+		std::vector<std::string> r;
+		std::string linea;
+		size_t a = 0;
+		while (a <= txt.size()) {
+			size_t b = txt.find(' ', a);
+			if (b == std::string::npos) b = txt.size();
+			const std::string palabra = txt.substr(a, b - a);
+			const std::string prueba = linea.empty() ? palabra : linea + " " + palabra;
+			if (!linea.empty() && medir(fu, prueba, tam) > ancho) {
+				r.push_back(linea);
+				linea = palabra;
+			} else {
+				linea = prueba;
+			}
+			a = b + 1;
+		}
+		if (!linea.empty()) r.push_back(linea);
+		crudo = antes;
+		return r;
 	}
 
 	// barra de ayuda: los botones que sirven ahora (control::Mando::ayuda), abajo a la derecha, en pastillas de vidrio;
 	// si no entran al lado de la mano del jugador se apilan en filas hacia arriba
 	void dibujarAyudaMando()
 	{
+		if (consultaAbierta()) return;   // (rama classic-duelo-ui: el panel trae sus botones)
 		const auto items = ctl->ayuda();
 		if (items.empty()) return;
 		const float h = 42.0f * s, r = 14.0f * s, tt = 19.0f * s, sep = 22.0f * s, pad = 16.0f * s;
@@ -2785,8 +3018,17 @@ private:
 	}
 
 #include "constructor_ui.h"   // rama classic-constructor: cache de caras y la pantalla "Construir mazo"
+#include "galeria_ui.h"        // rama classic-galeria: la galeria de figuras 3D (rejilla, visor y detalle)
 #include "duelo_ui.h"         // rama classic-integracion: pantallas del duelo real (elegir rival, resultado)
+#include "portada_ui.h"       // rama classic-portada: la portada (titulo) al arrancar
 #include "personajes_ui.h"    // rama classic-personajes: retratos, modo historia y el retrato del rival en el duelo
+#include "menu_ui.h"          // rama classic-menus: el menu principal y sus Opciones
+#include "resultado_ui.h"     // rama classic-resultado: la pantalla de resultado (motivo, resumen, revancha)
+#include "duelo_consulta_ui.h" // rama classic-duelo-ui: registro, visores de zonas, pila de la cadena y jugables
+#include "historia_dialogos_ui.h"   // rama classic-historia: dialogos del modo historia y el final
+#include "tutorial_ui.h"            // rama classic-historia: las reglas del duelo con esquemas de la mesa
+#include "entrada_clave_ui.h"  // rama classic-cartas-clave: el corte 2D de la entrada especial de las cartas clave
+#include "cosmeticos_ui.h"          // rama classic-extras: Personalizacion (fundas, tapete, controles, estadisticas)
 };
 
 }   // namespace interfaz

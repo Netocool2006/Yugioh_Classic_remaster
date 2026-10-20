@@ -4,3 +4,5 @@
 # duelo), asi que va como carta extra, sin duenno. Su ritual, Zera Ritual, tambien.
 Zera the Mant|3|ritual de Zera Ritual
 Zera Ritual|3|magia de ritual de Zera the Mant
+# Swift Gaia the Fierce Knight: de la era Goat (TCG 2004) pero fuera de las 1690; la nombra Spiral Spear Strike.
+Swift Gaia the Fierce Knight|3|lo nombra Spiral Spear Strike (perfora)

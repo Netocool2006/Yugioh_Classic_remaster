@@ -122,6 +122,7 @@ magician_s_valkyria|Magician's Valkyria|efecto|firma
 maiden_with_eyes_of_blue|Maiden with Eyes of Blue|efecto|firma
 marshmallon|Marshmallon|efecto|firma
 megazowler|Megazowler|normal|firma
+mischief_of_the_time_goddess|Mischief of the Time Goddess|magia|firma
 multiply|Multiply|magia|firma
 mystic_box|Mystic Box|magia|firma
 mystical_beast_of_serket|Mystical Beast of Serket|efecto|firma
@@ -135,6 +136,7 @@ queen_s_knight|Queen's Knight|normal|firma
 reaper_scythe_dreadscythe|Reaper Scythe - Dreadscythe|magia|firma
 ride_of_the_valkyries|Ride of the Valkyries|magia|firma
 satellite_cannon|Satellite Cannon|efecto|firma
+sentinel_of_the_seas|Sentinel of the Seas|normal|firma
 shrink|Shrink|magia|firma
 slifer_the_sky_dragon|Slifer the Sky Dragon|efecto|firma
 sword_arm_of_dragon|Sword Arm of Dragon|normal|firma

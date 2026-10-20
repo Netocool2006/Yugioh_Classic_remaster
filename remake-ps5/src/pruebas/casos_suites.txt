@@ -1,0 +1,69 @@
+# Hojas del mapa (docs/casos_de_uso.md) que prueba una prueba de siempre: ID|prueba (la de ciclo_completo.sh).
+# La hoja queda OK si esa prueba termino sin fallas en el mismo ciclo. Las demas hojas las prueba prueba_casos_uso.cpp.
+CU-FE-COMPILA-PS5|COMPILAR-JUEGO
+# control.h con el mando (prueba_mando.cpp)
+CU-FE-DUELO-MANO-MENU|prueba_mando
+CU-FE-DUELO-COLOCAR-MONSTRUO|prueba_mando
+CU-FE-DUELO-ATACAR|prueba_mando
+CU-FE-DUELO-POSICION|prueba_mando
+CU-FE-DUELO-VOLTEAR|prueba_mando
+CU-FE-DUELO-ACTIVAR-TRAMPA|prueba_mando
+CU-FE-DUELO-CAMPO-ACTIVAR|prueba_mando
+CU-FE-DUELO-CEMENTERIO-VER|prueba_mando
+# el duelo real con el mando (prueba_duelo.cpp)
+CU-FE-DUELO-PREGUNTAS|prueba_duelo
+CU-FE-DUELO-ELEGIR-OBJETIVO|prueba_duelo
+CU-FE-DUELO-ACTIVAR-MAGIA|prueba_duelo
+CU-FE-DUELO-COMPLETO-MANDO|prueba_duelo
+# la ruta real del juego (prueba_juego.cpp)
+CU-FE-DUELO-MESA-IGUAL-DUELO|prueba_juego
+CU-FE-DUELO-ROBO-ANIMADO|prueba_juego
+CU-FE-DUELO-FASES-CUADRADO|prueba_juego
+CU-FE-DUELO-CONTADORES|prueba_juego
+CU-FE-DUELO-VISORES-ZONAS|prueba_juego
+# el constructor (prueba_constructor.cpp)
+CU-FE-CONS-CREAR|prueba_constructor
+CU-FE-CONS-TECLADO|prueba_constructor
+CU-FE-CONS-BUSQUEDA|prueba_constructor
+CU-FE-CONS-FILTROS|prueba_constructor
+CU-FE-CONS-AGREGAR|prueba_constructor
+CU-FE-CONS-QUITAR|prueba_constructor
+CU-FE-CONS-LIMITE-3|prueba_constructor
+CU-FE-CONS-FUSION-EXTRA|prueba_constructor
+CU-FE-CONS-CLASE-RAPIDA|prueba_constructor
+CU-FE-CONS-STICK-DERECHO|prueba_constructor
+CU-FE-CONS-VALIDAR|prueba_constructor
+CU-FE-CONS-GUARDAR-SALIR|prueba_constructor
+CU-FE-CONS-USAR|prueba_constructor
+CU-FE-CONS-COPIAR|prueba_constructor
+CU-FE-CONS-RENOMBRAR|prueba_constructor
+CU-FE-CONS-BORRAR|prueba_constructor
+CU-FE-CONS-PROHIBIDAS|prueba_constructor
+CU-FE-CONS-FIRMA-BLOQUEADA|prueba_constructor
+CU-FE-CONS-INICIO-VALIDOS|prueba_constructor
+CU-FE-CONS-LISTA-SOLO-VER|prueba_constructor
+CU-FE-CONS-CARGAR|prueba_constructor
+CU-FE-CONS-MAZO-EN-DUELO|prueba_constructor
+# el sonido (prueba_audio.cpp)
+CU-FE-AUDIO-MEZCLA|prueba_audio
+# el motor de efectos: los casos a mano (prueba_efectos.cpp)
+CU-BE-EFECTOS-CASOS|prueba_efectos
+CU-BE-EFECTOS-ELECCIONES|prueba_efectos
+# la IA clasica (prueba_ia.cpp)
+CU-BE-IA-MAZOS-RIVALES|prueba_ia
+CU-BE-IA-LEGAL|prueba_ia
+CU-BE-IA-TERMINA|prueba_ia
+CU-BE-IA-RESULTADOS-VARIAN|prueba_ia
+CU-BE-IA-NIVEL|prueba_ia
+# planes, mazos dinamicos, memoria y dificultad adaptable (prueba_variedad.cpp)
+CU-BE-IA-PLANES|prueba_variedad
+CU-BE-IA-MAZOS-DINAMICOS|prueba_variedad
+CU-BE-IA-LECTURA-JUGADOR|prueba_variedad
+CU-BE-IA-ADAPTABLE|prueba_variedad
+CU-BE-IA-MEMORIA|prueba_variedad
+# la IA humana (prueba_ia_humana.cpp)
+CU-BE-IA-HUMANA-FUERZA|prueba_ia_humana
+CU-BE-IA-HUMANA-PRESUPUESTO|prueba_ia_humana
+CU-BE-IA-HUMANA-DIVERSIDAD|prueba_ia_humana
+CU-BE-IA-HUMANA-FAROLES|prueba_ia_humana
+CU-BE-IA-HUMANA-ERRORES|prueba_ia_humana

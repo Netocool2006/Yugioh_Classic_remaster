@@ -28,6 +28,12 @@
  *     afinado. Acotado (+4..-3) y sin tocar el nivel del rival ni su pool. Se apaga en Ajustes (Memoria::adaptable).
  */
 
+// rama classic-pulido: guardado atomico de variedad.txt. Este archivo se incluye DENTRO de namespace ia: se sale un
+// momento para incluir guardado.h a nivel global (sin tocar ia.h)
+}   // namespace ia
+#include "guardado.h"
+namespace ia {
+
 // ------------------------------------------------------------------------------------------------- planes
 enum PlanJuego { PL_AGRESIVO = 0, PL_CONTROL, PL_BLOQUEO, PL_ENJAMBRE, PL_COMBO, PL_CASTIGO, PL_MOLINO, PL_TEMPO, PL_ALTERNATIVA, NUM_PLANES };
 struct DefPlan {
@@ -124,6 +130,7 @@ struct Lectura {
 	float faroles{ 0.30f };   // coloca cartas que luego no activa
 	float ataques{ 0.50f };   // ataca siempre que puede
 	float muros{ 0.30f };     // coloca monstruos en defensa (muros)
+	float limpia{ 0.25f };    // (rama classic-ia-humana) destruye las magias/trampas boca abajo del rival (MST, Tormenta...)
 	float confianza{ 0.0f };  // 0 = no se sabe nada (primeros duelos)
 	int duelos{ 0 };
 	// efecto concreto: cuanto miedo dan sus cartas boca abajo (trampero: mas; farolero: menos)
@@ -136,6 +143,7 @@ struct Lectura {
 // lo que se ve en el duelo en curso (contadores sobre Duelo::sucesos)
 struct Observacion {
 	int turnos{ 0 }, colocadas{ 0 }, usadas{ 0 }, ataques{ 0 }, puestos{ 0 }, invocados{ 0 };
+	int limpiezas{ 0 };   // (rama classic-ia-humana) quitamagias/trampas que activo (papel 't')
 	size_t visto{ 0 };
 	int turnoDe{ -1 };
 	void mirar(const Duelo& d, int jug)
@@ -150,6 +158,7 @@ struct Observacion {
 			if (s.lado != jug) continue;
 			if (s.tipo == S_COLOCA_MT) colocadas++;
 			else if (s.tipo == S_ACTIVA_MT && (turnoDe != jug || esTrampa(d, s.carta))) usadas++;
+			if (s.tipo == S_ACTIVA_MT && papel(d.base, s.carta, 't')) limpiezas++;
 			else if (s.tipo == S_ATAQUE) ataques++;
 			else if (s.tipo == S_COLOCA) puestos++;
 			else if (s.tipo == S_INVOCA) invocados++;
@@ -160,6 +169,7 @@ struct Observacion {
 	float vFaroles() const { return colocadas >= 2 ? std::max(0.0f, std::min(1.0f, 1.0f - (float)usadas / (float)colocadas)) : -1.0f; }
 	float vAtaques() const { return turnos >= 2 ? std::min(1.0f, (float)ataques / (float)std::max(1, turnos - 1)) : -1.0f; }
 	float vMuros() const { return puestos + invocados >= 2 ? (float)puestos / (float)(puestos + invocados) : -1.0f; }
+	float vLimpia() const { return turnos >= 3 ? std::min(1.0f, 3.0f * (float)limpiezas / (float)turnos) : -1.0f; }
 	// la lectura de este momento: lo recordado mezclado con lo visto hoy
 	Lectura mezclar(const Lectura& mem) const
 	{
@@ -172,6 +182,7 @@ struct Observacion {
 		mx(r.faroles, vFaroles());
 		mx(r.ataques, vAtaques());
 		mx(r.muros, vMuros());
+		mx(r.limpia, vLimpia());
 		r.confianza = std::min(1.0f, mem.confianza + 0.08f * (float)turnos);
 		return r;
 	}
@@ -295,7 +306,8 @@ inline int sortearPlan(const std::array<float, NUM_PLANES>& w, Azar& a, int salv
 
 // ------------------------------------------------------------------------------------------------- memoria
 // variedad.txt (junto a progreso.txt): lineas
-//   adaptable 1|0          racha N          jugador trampas faroles ataques muros confianza duelos
+//   adaptable 1|0          humana 1|0       racha N
+//   jugador trampas faroles ataques muros confianza duelos [limpia]   (limpia: rama classic-ia-humana; opcional)
 //   plan <rival> p1 p2 p3  (el mas reciente primero)      mazo <rival> id id id ...  (el ultimo)
 struct Memoria {
 	struct DeRival { std::vector<int> planes; std::vector<std::string> mazo; };
@@ -303,11 +315,13 @@ struct Memoria {
 	Lectura jugador;
 	int racha{ 0 };          // + victorias seguidas del jugador, - derrotas seguidas
 	bool adaptable{ true };  // dificultad adaptable (Ajustes)
+	bool humana{ true };     // rama classic-ia-humana: "IA: Clasica / Humana" (Opciones; ia_humana.h)
 	std::string ruta;
 
-	float dificultad() const { return adaptable ? (float)std::max(-3, std::min(4, racha)) : 0.0f; }
+	// (rama classic-ia-humana: si el jugador pierde seguido baja como mucho un poco, -1; nunca a modo principiante)
+	float dificultad() const { return adaptable ? (float)std::max(-1, std::min(4, racha)) : 0.0f; }
 	// el ruido de la decision: menos si el jugador gana seguido (acotado: el nivel del rival manda)
-	float factorRuido() const { return std::max(0.45f, std::min(1.5f, 1.0f - 0.14f * dificultad())); }
+	float factorRuido() const { return std::max(0.45f, std::min(1.1f, 1.0f - (dificultad() < 0.0f ? 0.08f : 0.14f) * dificultad())); }
 
 	void leer(const std::string& r)
 	{
@@ -317,6 +331,7 @@ struct Memoria {
 		while (f && std::getline(f, l)) {
 			auto p = palabras(l);
 			if (p.size() >= 2 && p[0] == "adaptable") adaptable = p[1] != "0";
+			else if (p.size() >= 2 && p[0] == "humana") humana = p[1] != "0";
 			else if (p.size() >= 2 && p[0] == "racha") racha = std::max(-20, std::min(20, atoi(p[1].c_str())));
 			else if (p.size() >= 7 && p[0] == "jugador") {
 				jugador.trampas = (float)atof(p[1].c_str());
@@ -325,6 +340,7 @@ struct Memoria {
 				jugador.muros = (float)atof(p[4].c_str());
 				jugador.confianza = (float)atof(p[5].c_str());
 				jugador.duelos = atoi(p[6].c_str());
+				if (p.size() >= 8) jugador.limpia = (float)atof(p[7].c_str());   // (rama classic-ia-humana)
 			} else if (p.size() >= 2 && p[0] == "plan") {
 				auto& d = rivales[p[1]];
 				d.planes.clear();
@@ -338,22 +354,17 @@ struct Memoria {
 	bool guardar() const
 	{
 		if (ruta.empty()) return false;
-		FILE* f = fopen(ruta.c_str(), "w");
-		if (!f) {
-			fprintf(stderr, "[ia] no se pudo guardar %s\n", ruta.c_str());
-			return false;
-		}
-		fprintf(f, "adaptable %d\nracha %d\njugador %.3f %.3f %.3f %.3f %.3f %d\n", adaptable ? 1 : 0, racha, jugador.trampas, jugador.faroles,
-		        jugador.ataques, jugador.muros, jugador.confianza, jugador.duelos);
+		std::string s;   // (rama classic-pulido: guardado atomico, guardado.h)
+		guardado::agregar(s, "adaptable %d\nhumana %d\nracha %d\njugador %.3f %.3f %.3f %.3f %.3f %d %.3f\n", adaptable ? 1 : 0, humana ? 1 : 0, racha,
+		                  jugador.trampas, jugador.faroles, jugador.ataques, jugador.muros, jugador.confianza, jugador.duelos, jugador.limpia);
 		for (const auto& kv : rivales) {
-			fprintf(f, "plan %s", kv.first.c_str());
-			for (int pl : kv.second.planes) fprintf(f, " %s", PLANES[pl].clave);
-			fprintf(f, "\nmazo %s", kv.first.c_str());
-			for (const std::string& id : kv.second.mazo) fprintf(f, " %s", id.c_str());
-			fprintf(f, "\n");
+			s += "plan " + kv.first;
+			for (int pl : kv.second.planes) s += std::string(" ") + PLANES[pl].clave;
+			s += "\nmazo " + kv.first;
+			for (const std::string& id : kv.second.mazo) s += " " + id;
+			s += "\n";
 		}
-		fclose(f);
-		return true;
+		return guardado::guardarAtomico(ruta, s);
 	}
 	// al terminar un duelo: el plan y el mazo usados, lo aprendido del jugador (decae: lo viejo pesa menos) y la racha
 	void registrar(const std::string& rival, const std::vector<int>& planes, const std::vector<std::string>& mazo, const Observacion& o, int ganador)
@@ -380,6 +391,7 @@ struct Memoria {
 		j.faroles += 0.12f * (neutro.faroles - j.faroles);
 		j.ataques += 0.12f * (neutro.ataques - j.ataques);
 		j.muros += 0.12f * (neutro.muros - j.muros);
+		j.limpia += 0.12f * (neutro.limpia - j.limpia);
 		j.confianza *= 0.92f;
 		if (o.turnos >= 3) {
 			const float a = 0.35f;
@@ -390,6 +402,7 @@ struct Memoria {
 			mx(j.faroles, o.vFaroles());
 			mx(j.ataques, o.vAtaques());
 			mx(j.muros, o.vMuros());
+			mx(j.limpia, o.vLimpia());
 			j.confianza = std::min(1.0f, j.confianza + 0.25f);
 			j.duelos++;
 		}

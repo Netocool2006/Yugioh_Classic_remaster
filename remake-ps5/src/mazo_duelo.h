@@ -4,7 +4,8 @@
 	// mando (la mano interactiva = 5 robadas del mazo, la fusion a su zona), robarDelMazo() en la fase de robo y
 	// avanzarConstructor() al empezar cada cuadro (panel tactil, tecla M en el PC o Ajustes > "Construir mazo").
 	mazo::Coleccion coleccion;
-	mazo::Mazo mazoJugador;   // el guardado (puede no ser valido: se sigue editando)
+	mazo::Biblioteca biblioteca;   // rama classic-constructor2: los mazos guardados (mazos.txt) y cual es el activo
+	mazo::Mazo mazoJugador;   // el activo de la biblioteca (el que usa el duelo si es valido)
 	mazo::Mazo mazoDuelo;     // con el que se juega: el guardado si es valido; si no, el inicial
 	mazo::Mazo mazoRival;     // aleatorio valido de 40
 	std::vector<std::string> pilaJ, pilaR, manoInicialJ;   // lo que queda en cada mazo (se roba de back())
@@ -12,27 +13,44 @@
 	constructor::Constructor constructorMazo;
 	control::Repetidor repetidorConstructor;
 	bool pedidoConstructor{ false };
+	bool pedidoLista{ false };   // rama classic-constructor2: LISTA DE CARTAS (solo ver)
 	bool l2Antes{ false }, r2Antes{ false };
-	float stickIniT{ 0.0f };
+	float stickDerT{ 0.0f };
 
 	void prepararMazos()
 	{
 		coleccion.leer(getAssetPath() + "ui/");
 		rutaMazoJ = mazo::rutaMazo(getAssetPath());
-		if (!mazoJugador.cargar(rutaMazoJ, coleccion)) {
-			mazoJugador = mazo::Mazo::porDefecto(coleccion);   // primera vez: el mazo inicial, y queda guardado
-			mazoJugador.guardar(rutaMazoJ);
-		}
+		leerOpcionBanlist();
+		biblioteca.cargar(rutaMazoJ, coleccion, idioma::ingles());   // (la primera vez: importa mazo.txt y los mazos de inicio)
+		tomarMazoActivo();
 		repartir();
 		interfazDuelo.conectarConstructor(&constructorMazo);
 #if defined(PS5_HOST_REFERENCE)
 		if (getenv("YUGI_CONSTRUCTOR")) pedidoConstructor = true;   // PC: arranca en "Construir mazo"
+		if (getenv("YUGI_LISTA_CARTAS")) pedidoLista = true;      // PC: arranca en la lista de cartas
 #endif
+	}
+
+	// Opciones > "Permitir cartas prohibidas" (opciones.txt junto a mazo.txt): se relee al abrir el constructor y al
+	// repartir, asi vale apenas se cambia en Opciones
+	void leerOpcionBanlist()
+	{
+		constructor::aplicarOpcionProhibidas(coleccion, rutaMazoJ);
+	}
+
+	// el mazo de los duelos = el activo de la biblioteca (sin ninguno: el mazo inicial)
+	void tomarMazoActivo()
+	{
+		if (const mazo::Mazo* a = biblioteca.mazoActivo()) mazoJugador = *a;
+		else mazoJugador = mazo::Mazo::porDefecto(coleccion);
+		fprintf(stderr, "[mazo] mazo de los duelos: '%s' (%d + %d)\n", mazoJugador.nombre.c_str(), (int)mazoJugador.principal.size(), (int)mazoJugador.fusion.size());
 	}
 
 	// baraja los dos mazos y roba la mano inicial del jugador
 	void repartir()
 	{
+		leerOpcionBanlist();
 		std::string motivo;
 		if (mazoJugador.valido(coleccion, &motivo)) {
 			mazoDuelo = mazoJugador;
@@ -89,39 +107,53 @@
 			return;
 		}
 		if (!constructorMazo.abierto) {
-			if (pedidoConstructor || ((mando.pressed & PAD_TOUCH_PAD) && !ajustesAbiertos())) {
-				pedidoConstructor = false;
+			// (constructor::abrirConstructorMazo() / abrirListaCartas(): las entradas del menu principal)
+			const constructor::PedidoPantalla pedido = constructor::tomarPedido();
+			pedidoConstructor |= pedido == constructor::PEDIDO_CONSTRUCTOR;
+			pedidoLista |= pedido == constructor::PEDIDO_LISTA;
+			if (pedidoConstructor || pedidoLista || ((mando.pressed & PAD_TOUCH_PAD) && !ajustesAbiertos())) {
+				const bool lista = pedidoLista && !pedidoConstructor;
+				pedidoConstructor = pedidoLista = false;
 				if (coleccion.version != constructor::versionIdioma()) coleccion.leer(getAssetPath() + "ui/");   // (cambio el idioma)
 				ui.visible = false;   // (cierra Ajustes si se abrio desde ahi)
-				constructorMazo.abrir(coleccion, mazoJugador, rutaMazoJ);
+				leerOpcionBanlist();
+				if (lista) constructorMazo.abrirLista(coleccion, biblioteca);
+				else constructorMazo.abrir(coleccion, biblioteca);
 				sonido.sfx("sfx_constructor_abrir");   // rama classic-audio
 				musica("musica_constructor");
 				repetidorConstructor = control::Repetidor{};
 				l2Antes = mando.l2 > 0.55f;
 				r2Antes = mando.r2 > 0.55f;
+				stickDerT = 0.0f;
+				mando.pressed = 0;   // (el X que lo abrio no cuenta adentro)
 			}
 			if (!constructorMazo.abierto) return;
 		}
 		const float dt = glm::clamp(frameTimer, 0.0f, 0.1f);
 		uint32_t extra = teclas;   // (PC: el teclado como botones)
 		teclas = 0;
+		if (guion.activo()) extra |= guion.avanzar(dt);   // (PC: YUGI_GUION tambien maneja el constructor)
 		const uint32_t recien = botonesDe(mando.pressed) | extra;
 		uint32_t p = repetidorConstructor.paso(botonesDe(mando.held), recien, mando.left_x, mando.left_y, dt) | (recien & ~control::B_DIRECCIONES);
-		// L2/R2 (gatillos): filtro de clase; L3: sin filtros; stick derecho a los lados: la inicial (con repeticion)
+		// L2/R2 (gatillos): clase rapida; L3: sin filtros; OPTIONS: guardar; stick derecho: saltar entre el mazo y la
+		// coleccion (izq/der) y desplazar el texto de la carta (arriba/abajo), con repeticion
 		const bool l2 = mando.l2 > 0.55f, r2 = mando.r2 > 0.55f;
 		if (l2 && !l2Antes) p |= constructor::C_L2;
 		if (r2 && !r2Antes) p |= constructor::C_R2;
 		l2Antes = l2;
 		r2Antes = r2;
 		if (mando.pressed & PAD_L3) p |= constructor::C_L3;
-		if (fabsf(mando.right_x) > 0.6f) {
-			stickIniT -= dt;
-			if (stickIniT <= 0.0f) {
-				p |= mando.right_x > 0.0f ? constructor::C_INI_SIG : constructor::C_INI_ANT;
-				stickIniT = stickIniT < -50.0f ? 0.38f : 0.16f;
+		if (mando.pressed & PAD_OPTIONS) p |= constructor::C_OPTIONS;
+		const float rx = mando.right_x, ry = mando.right_y;
+		if (fabsf(rx) > 0.6f || fabsf(ry) > 0.6f) {
+			stickDerT -= dt;
+			if (stickDerT <= 0.0f) {
+				if (fabsf(rx) > fabsf(ry)) p |= rx > 0.0f ? constructor::C_RS_DER : constructor::C_RS_IZQ;
+				else p |= ry > 0.0f ? constructor::C_RS_ABAJO : constructor::C_RS_ARRIBA;
+				stickDerT = stickDerT < -50.0f ? 0.38f : 0.12f;
 			}
 		} else {
-			stickIniT = -99.0f;
+			stickDerT = -99.0f;
 		}
 		const size_t antes = constructorMazo.mazo.principal.size() + constructorMazo.mazo.fusion.size();
 		constructorMazo.avanzar(dt, p);
@@ -130,8 +162,8 @@
 		else if (despues < antes) sonido.sfx("sfx_constructor_quitar");
 		else if (p & control::B_DIRECCIONES) sonido.sfx("sfx_menu_cursor", 0.7f);
 		if (!constructorMazo.abierto) {
-			// se cerro (circulo): el mazo guardado manda; el duelo se vuelve a repartir con el
-			mazoJugador = constructorMazo.mazo;
+			// se cerro (circulo en la lista de mazos): el mazo activo manda; el duelo se vuelve a repartir con el
+			tomarMazoActivo();
 			repartir();   // (el mazo nuevo vale para el proximo duelo)
 			sonido.sfx("sfx_menu_cancelar");
 			musicaDePantalla();

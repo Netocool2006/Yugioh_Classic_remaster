@@ -26,10 +26,19 @@ static std::map<std::string, int> probadas;   // carta -> casos
 
 static const char* nombreCaso = "";
 static bool okCaso = true;
+// rama classic-probador: ganchos del certificador (prueba_certificacion.cpp incluye este archivo): el caso que empieza,
+// el que termina (y si paso) y cada escena al deshacerse (su duelo, para revisar la mesa del front)
+static void (*ganchoCaso)(const char* nombre, const char* carta) = nullptr;
+static void (*ganchoFin)(bool ok) = nullptr;
+static void (*ganchoEscena)(const Duelo& d) = nullptr;
 
 // un duelo a medio jugar: turno 3 del lado 0, fase principal 1, mazos de relleno
 struct Escena {
 	Duelo d{ &base };
+	~Escena()
+	{
+		if (ganchoEscena) ganchoEscena(d);
+	}
 	explicit Escena(Fase f = F_PRINCIPAL1)
 	{
 		d.l = {};
@@ -116,14 +125,17 @@ static void caso(const char* nombre, const char* carta)
 	okCaso = true;
 	casos++;
 	probadas[carta]++;
+	if (ganchoCaso) ganchoCaso(nombre, carta);
 }
 static void fin()
 {
 	fprintf(stderr, "%s %s\n", okCaso ? "  ok   " : "  MAL  ", nombreCaso);
+	if (ganchoFin) ganchoFin(okCaso);
 }
 static Lugar M(int lado, int z) { return { lado, EN_MONSTRUO, z }; }
 static Lugar MT(int lado, int z) { return { lado, EN_MT, z }; }
 static Lugar H(int lado, int k) { return { lado, EN_MANO, k }; }
+static int ojamaConDisparo(Escena& e, int lado);   // (rama classic-elecciones: tandaElecciones)
 
 static void tanda1()
 {
@@ -1815,8 +1827,8 @@ static void tanda7b()
 		caso("Gearfried: el equipo que se le pone se destruye", "gearfried_the_iron_knight");
 		Escena e;
 		e.mon(0, "gearfried_the_iron_knight");
-		VERIFICA(usar(e, "axe_of_despair", { M(0, 0) }), "no se activo");
-		VERIFICA(e.d.l[0].m[0].atkEf == 1800 && e.enCementerio(0, "axe_of_despair") == 1, "el equipo quedo");
+		VERIFICA(usar(e, "legendary_sword", { M(0, 0) }), "no se activo");
+		VERIFICA(e.d.l[0].m[0].atkEf == 1800 && e.enCementerio(0, "legendary_sword") == 1, "el equipo quedo");
 		fin();
 	}
 	{
@@ -5548,7 +5560,7 @@ static void tanda7o()
 		Escena e;
 		const int z = e.mon(0, "celtic_guardian");
 		const int t = e.colocar(1, "armor_break");
-		const int k = e.mano(0, "axe_of_despair");
+		const int k = e.mano(0, "legendary_sword");
 		VERIFICA(e.activar(0, H(0, k), { M(0, z) }), "no activo");
 		VERIFICA(e.activar(1, MT(1, t)), "Armor Break");
 		e.pasarTodo();
@@ -5615,6 +5627,52 @@ static void tanda7p()
 		VERIFICA(e.activar(0, M(0, z)), "no activo");
 		e.pasarTodo();
 		VERIFICA(e.d.l[0].m[(size_t)z].atkEf == 3000 && e.d.l[1].desterrados.size() == 1, "ATK %d", e.d.l[0].m[(size_t)z].atkEf);
+		fin();
+	}
+	{
+		caso("Ride of the Valkyries desde el cementerio: se destierra y busca Mischief of the Time Goddess", "ride_of_the_valkyries");
+		Escena e;
+		e.d.l[0].mazo.push_back("mischief_of_the_time_goddess");
+		for (const char* id : { "valkyrie_zweite", "valkyrie_brunhilde" }) e.mano(0, id);
+		VERIFICA(usar(e, "ride_of_the_valkyries") && e.d.l[0].monstruos() == 2, "monstruos %d", e.d.l[0].monstruos());
+		resolverDisparos(e);
+		e.pasarTodo();
+		VERIFICA(enMano(e, 0, "mischief_of_the_time_goddess"), "no busco Mischief");
+		VERIFICA(e.enCementerio(0, "ride_of_the_valkyries") == 0 && e.d.l[0].desterrados.size() == 1, "Ride no se desterro");
+		fin();
+	}
+	{
+		caso("Valkyrie Erste invocada por Ride of the Valkyries: Mischief of the Time Goddess del cementerio a la mano", "valkyrie_erste");
+		Escena e;
+		e.d.l[0].cementerio.push_back("mischief_of_the_time_goddess");
+		for (const char* id : { "valkyrie_erste", "valkyrie_brunhilde" }) e.mano(0, id);
+		VERIFICA(usar(e, "ride_of_the_valkyries") && buscarZona(e, 0, "valkyrie_erste") >= 0, "Erste no salio");
+		resolverDisparos(e);
+		e.pasarTodo();
+		VERIFICA(enMano(e, 0, "mischief_of_the_time_goddess") && e.enCementerio(0, "mischief_of_the_time_goddess") == 0, "no trajo Mischief");
+		fin();
+	}
+	{
+		caso("Mischief of the Time Goddess: solo Valkyries; sin respuestas; salta a la batalla de tu proximo turno (sin robo); no otra ese turno",
+		     "mischief_of_the_time_goddess");
+		Escena e(F_BATALLA);
+		e.mon(0, "valkyrie_brunhilde");
+		const int g = e.mon(0, "battle_ox");
+		e.colocar(1, "mystical_space_typhoon");
+		e.mano(0, "mischief_of_the_time_goddess");
+		e.mano(0, "mischief_of_the_time_goddess");
+		VERIFICA(!e.activar(0, H(0, 0)), "se activo con un monstruo que no es Valkyrie");
+		e.d.alCementerio(0, g);
+		e.d.ef.disparos.clear();
+		const int t0 = e.d.turno;
+		const size_t mano0 = e.d.l[0].mano.size(), mazo0 = e.d.l[0].mazo.size();
+		VERIFICA(e.activar(0, H(0, 0)), "no se activo");
+		VERIFICA(!(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 1), "el rival pudo responder");
+		e.pasarTodo();
+		VERIFICA(e.d.turno == t0 + 2 && e.d.activo == 0 && e.d.fase == F_BATALLA, "turno %d activo %d fase %d", e.d.turno, e.d.activo, (int)e.d.fase);
+		VERIFICA(e.d.l[0].mano.size() == mano0 - 1 && e.d.l[0].mazo.size() == mazo0, "robo o mano %d", (int)e.d.l[0].mano.size());
+		VERIFICA(e.enCementerio(0, "mischief_of_the_time_goddess") == 1, "no fue al cementerio");
+		VERIFICA(!e.activar(0, H(0, 0)), "otra Mischief en el turno del salto");
 		fin();
 	}
 	{
@@ -6570,9 +6628,9 @@ static void tanda7t()
 		caso("Disappear; Disarmament; Disturbance Strategy; Divine Wrath; DNA Transplant; Double Snare", "disarmament");
 		for (const char* id : { "disappear", "disturbance_strategy", "divine_wrath", "dna_transplant", "double_snare" }) probadas[id]++;
 		Escena e;
-		const int z = e.mon(1, "battle_ox");
-		mtArriba(e, 1, "axe_of_despair", e.d.l[1].m[(size_t)z].uid);
-		VERIFICA(usarColocada(e, 0, "disarmament") && e.d.l[1].m[(size_t)z].atkEf == 1700, "Disarmament");
+		const int z = e.mon(1, "celtic_guardian");
+		mtArriba(e, 1, "legendary_sword", e.d.l[1].m[(size_t)z].uid);
+		VERIFICA(usarColocada(e, 0, "disarmament") && e.d.l[1].m[(size_t)z].atkEf == 1400, "Disarmament");
 		Escena f;
 		f.mon(0, "dark_magician");
 		const int k = f.mon(1, "kuriboh");
@@ -6695,6 +6753,7 @@ static void tanda7u()
 		e.d.recalcular();
 		VERIFICA(e.d.l[0].m[(size_t)m].atkEf == 1600, "Muka %d", e.d.l[0].m[(size_t)m].atkEf);
 		Escena f;
+		f.mon(0, "terrorking_archfiend");   // (rama classic-motor2: sin una carta Archfiend, Falling Down se destruye)
 		const int o = f.mon(1, "blue_eyes");
 		VERIFICA(usar(f, "falling_down", { M(1, o) }) && buscarZona(f, 0, "blue_eyes") >= 0, "Falling Down");
 		Escena g;
@@ -8388,6 +8447,3060 @@ static void tanda7as()
 		fin();
 	}
 }
+// rama classic-probador: casos que pidio el probador automatico (prueba_certificacion.cpp): fallas que encontro y
+// cartas que solo estaban marcadas en una lista de otro caso
+static void tandaProbador()
+{
+	fprintf(stderr, "tanda del probador\n");
+	{
+		caso("Appropriate: el rival roba 2 con Pot of Greed (un robo de 2 cartas) y tu robas 2, no 4", "appropriate");
+		Escena e;
+		mtArriba(e, 0, "appropriate");
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const size_t m0 = e.d.l[0].mano.size();
+		const int k = e.mano(1, "pot_of_greed");
+		VERIFICA(e.activar(1, H(1, k)), "Pot of Greed no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].mano.size() == 2, "el rival tiene %d (esperado 2)", (int)e.d.l[1].mano.size());
+		VERIFICA(e.d.l[0].mano.size() == m0 + 2, "Appropriate robo %d (esperado 2)", (int)(e.d.l[0].mano.size() - m0));
+		fin();
+	}
+	{
+		caso("Solemn Wishes: Pot of Greed (un robo de 2 cartas) da 500 LP, no 1000; el robo de la fase de robo tambien 500", "solemn_wishes");
+		Escena e;
+		mtArriba(e, 0, "solemn_wishes");
+		VERIFICA(usar(e, "pot_of_greed"), "Pot of Greed no se activo");
+		VERIFICA(e.d.l[0].lp == LP_INICIAL + 500, "LP %d (esperado %d)", e.d.l[0].lp, LP_INICIAL + 500);
+		pasarFases(e, 1);
+		pasarFases(e, 0);
+		VERIFICA(e.d.l[0].lp == LP_INICIAL + 1000, "tras el robo del turno LP %d (esperado %d)", e.d.l[0].lp, LP_INICIAL + 1000);
+		fin();
+	}
+	{
+		caso("Silent Magician LV4: el rival roba 2 con Pot of Greed: 1 contador (+500 ATK)", "silent_magician_lv4");
+		Escena e;
+		const int z = e.mon(0, "silent_magician_lv4");
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int k = e.mano(1, "pot_of_greed");
+		VERIFICA(e.activar(1, H(1, k)), "Pot of Greed no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)z].contadores == 1, "contadores %d (esperado 1)", e.d.l[0].m[(size_t)z].contadores);
+		fin();
+	}
+	{
+		caso("Shift: el ataque a Celtic Guardian pasa a Battle Ox (el mejor blanco propio): Baby Dragon choca con 1700 ATK y se destruye", "shift");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int c = e.mon(0, "celtic_guardian", true);
+		const int o = e.mon(0, "battle_ox");
+		const int a = e.mon(1, "baby_dragon");
+		const int z = e.colocar(0, "shift");
+		Jugada j;
+		j.tipo = J_ATACAR;
+		j.zona = a;
+		j.objetivo = c;
+		VERIFICA(e.d.aplicar(j), "no ataco");
+		VERIFICA(e.activar(0, MT(0, z)), "Shift no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)a].vacia() && e.d.l[1].lp == LP_INICIAL - 500 && !e.d.l[0].m[(size_t)o].vacia() && !e.d.l[0].m[(size_t)c].vacia(),
+		         "Baby Dragon %s, LP rival %d (esperado 7500)", e.d.l[1].m[(size_t)a].vacia() ? "destruido" : "vivo", e.d.l[1].lp);
+		fin();
+	}
+	// ---- lote 1 del probador: magias normales que solo estaban marcadas en listas
+	{
+		caso("Battery Charger: paga 500 e invoca un Batteryman del cementerio", "battery_charger");
+		Escena e;
+		e.d.l[0].cementerio = { "batteryman_aa" };
+		VERIFICA(usar(e, "battery_charger"), "no se activo");
+		VERIFICA(buscarZona(e, 0, "batteryman_aa") >= 0 && e.d.l[0].lp == LP_INICIAL - 500, "Batteryman en el campo %d, LP %d", buscarZona(e, 0, "batteryman_aa"), e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Chaos End: con 7 propias desterradas destruye todos los monstruos; con 6 no se activa", "chaos_end");
+		Escena e;
+		e.mon(0, "battle_ox");
+		e.mon(1, "dark_magician");
+		e.d.l[0].desterrados = { "a", "b", "c", "d", "e", "f" };
+		const int k = e.mano(0, "chaos_end");
+		VERIFICA(!motivoNoActivar(e.d, 0, H(0, k), false).empty(), "se activa con 6 desterradas");
+		e.d.l[0].desterrados.push_back("g");
+		VERIFICA(e.activar(0, H(0, k)), "no se activo con 7");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].monstruos() == 0 && e.d.l[1].monstruos() == 0, "quedan %d/%d monstruos", e.d.l[0].monstruos(), e.d.l[1].monstruos());
+		fin();
+	}
+	{
+		caso("Chaos Greed: con 4 desterradas y el cementerio vacio roba 2", "chaos_greed");
+		Escena e;
+		e.d.l[0].desterrados = { "a", "b", "c", "d" };
+		const size_t m0 = e.d.l[0].mano.size();
+		VERIFICA(usar(e, "chaos_greed"), "no se activo");
+		VERIFICA(e.d.l[0].mano.size() == m0 + 2, "mano %d (esperado %d)", (int)e.d.l[0].mano.size(), (int)m0 + 2);
+		fin();
+	}
+	{
+		caso("Final Destiny: descarta 5 y destruye todas las cartas del campo", "final_destiny");
+		Escena e;
+		e.mon(0, "battle_ox");
+		e.mon(1, "dark_magician");
+		e.colocar(1, "mirror_force");
+		e.colocar(0, "trap_hole");
+		for (int k = 0; k < 5; k++) e.mano(0, "celtic_guardian");
+		VERIFICA(usar(e, "final_destiny", {}, { 0, 1, 2, 3, 4 }), "no se activo");
+		VERIFICA(e.d.l[0].monstruos() + e.d.l[1].monstruos() == 0 && e.d.l[0].libreMT() == 0 && e.d.l[1].libreMT() == 0 && e.d.l[0].mano.empty(),
+		         "monstruos %d/%d, mano %d", e.d.l[0].monstruos(), e.d.l[1].monstruos(), (int)e.d.l[0].mano.size());
+		fin();
+	}
+	{
+		caso("Remove Trap: destruye una trampa boca arriba (no una boca abajo)", "remove_trap");
+		Escena e;
+		const int z = mtArriba(e, 1, "spirit_barrier");
+		e.colocar(1, "mirror_force");
+		VERIFICA(usar(e, "remove_trap", { MT(1, z) }), "no se activo");
+		VERIFICA(e.d.l[1].mt[(size_t)z].vacia() && e.d.l[1].colocadasMT() == 1 && e.enCementerio(1, "spirit_barrier") == 1, "no destruyo la trampa boca arriba");
+		fin();
+	}
+	{
+		caso("Metamorphosis: sacrifica uno y trae una fusion del mismo nivel", "metamorphosis");
+		Escena e;
+		const int z = e.mon(0, "summoned_skull");   // nivel 6
+		e.d.l[0].extra = { "dark_flare_knight" };  // nivel 6
+		VERIFICA(usar(e, "metamorphosis", { M(0, z) }), "no se activo");
+		VERIFICA(buscarZona(e, 0, "dark_flare_knight") >= 0 && e.enCementerio(0, "summoned_skull") == 1 && e.d.l[0].extra.empty(), "no llego la fusion");
+		fin();
+	}
+	{
+		caso("Miracle Dig: con 5 monstruos propios desterrados, 3 vuelven al cementerio", "miracle_dig");
+		Escena e;
+		e.d.l[0].desterrados = { "battle_ox", "celtic_guardian", "dark_magician", "mystical_elf", "baby_dragon" };
+		VERIFICA(usar(e, "miracle_dig"), "no se activo");
+		VERIFICA(e.d.l[0].desterrados.size() == 2 && e.d.l[0].cementerio.size() == 3 + 1, "desterrados %d, cementerio %d", (int)e.d.l[0].desterrados.size(),
+		         (int)e.d.l[0].cementerio.size());
+		fin();
+	}
+	{
+		caso("Soul Reversal: un monstruo de volteo del cementerio vuelve encima del mazo", "soul_reversal");
+		Escena e;
+		e.d.l[0].cementerio = { "man_eater_bug", "battle_ox" };
+		VERIFICA(usar(e, "soul_reversal"), "no se activo (motivo con Man-Eater Bug en el cementerio)");
+		VERIFICA(!e.d.l[0].mazo.empty() && e.d.l[0].mazo.back() == "man_eater_bug" && e.enCementerio(0, "man_eater_bug") == 0, "Man-Eater Bug no quedo encima del mazo");
+		fin();
+	}
+	{
+		caso("Spell Reproduction: manda 2 magias de la mano y recupera una magia del cementerio", "spell_reproduction");
+		Escena e;
+		e.d.l[0].cementerio = { "dark_hole" };
+		e.mano(0, "pot_of_greed");
+		e.mano(0, "raigeki");
+		VERIFICA(usar(e, "spell_reproduction"), "no se activo");
+		VERIFICA(e.d.l[0].mano.size() == 1 && e.d.l[0].mano[0] == "dark_hole" && e.enCementerio(0, "pot_of_greed") == 1 && e.enCementerio(0, "raigeki") == 1,
+		         "mano %d", (int)e.d.l[0].mano.size());
+		fin();
+	}
+	{
+		caso("Ojama Delta Hurricane!!: con los 3 Ojama destruye todas las cartas del rival (la mano del rival no se toca)", "ojama_delta_hurricane");
+		Escena e;
+		e.mon(0, "ojama_green");
+		e.mon(0, "ojama_yellow");
+		e.mon(0, "ojama_black");
+		e.mon(1, "dark_magician");
+		e.colocar(1, "mirror_force");
+		e.mano(1, "pot_of_greed");
+		VERIFICA(usar(e, "ojama_delta_hurricane"), "no se activo");
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.d.l[1].libreMT() == 0 && e.d.l[0].monstruos() == 3, "quedan cartas del rival");
+		VERIFICA(e.d.l[1].mano.size() == 1, "la mano del rival paso de 1 a %d (el texto no la toca)", (int)e.d.l[1].mano.size());
+		fin();
+	}
+	{
+		caso("Primal Seed: con Envoy en el campo, 2 propias desterradas vuelven a la mano", "primal_seed");
+		Escena e;
+		e.mon(0, "black_luster_soldier_envoy_of_the_beginning");
+		e.d.l[0].desterrados = { "battle_ox", "pot_of_greed" };
+		VERIFICA(usar(e, "primal_seed"), "no se activo");
+		VERIFICA(e.d.l[0].desterrados.empty() && e.d.l[0].mano.size() == 2, "mano %d", (int)e.d.l[0].mano.size());
+		fin();
+	}
+	{
+		caso("Royal Tribute: con Necrovalley, los dos lados descartan los monstruos de la mano", "royal_tribute");
+		Escena e;
+		const int k = e.mano(0, "necrovalley");
+		VERIFICA(e.activar(0, H(0, k)), "Necrovalley no se activo");
+		e.pasarTodo();
+		e.mano(0, "battle_ox");
+		e.mano(0, "pot_of_greed");
+		e.mano(1, "dark_magician");
+		e.mano(1, "mirror_force");
+		VERIFICA(usar(e, "royal_tribute"), "no se activo");
+		VERIFICA(e.d.l[0].mano.size() == 1 && e.d.l[0].mano[0] == "pot_of_greed" && e.d.l[1].mano.size() == 1 && e.d.l[1].mano[0] == "mirror_force", "manos %d/%d",
+		         (int)e.d.l[0].mano.size(), (int)e.d.l[1].mano.size());
+		fin();
+	}
+	// ---- lote 2 del probador: contraataques y respuestas a lo que activa el rival
+	{
+		caso("Divine Wrath: descarta 1, niega el efecto de monstruo (Cannon Soldier no quema) y lo destruye", "divine_wrath");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int cs = e.mon(1, "cannon_soldier");
+		e.mon(1, "battle_ox");
+		const int dw = e.colocar(0, "divine_wrath");
+		e.mano(0, "celtic_guardian");
+		VERIFICA(e.activar(1, M(1, cs)), "Cannon Soldier no activo su efecto");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, dw), {}, { 0 }), "Divine Wrath no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL && buscarZona(e, 1, "cannon_soldier") < 0 && e.d.l[0].mano.empty(), "LP %d, Cannon Soldier en %d, mano %d", e.d.l[0].lp,
+		         buscarZona(e, 1, "cannon_soldier"), (int)e.d.l[0].mano.size());
+		fin();
+	}
+	{
+		caso("Judgment of Anubis: niega el Mystical Space Typhoon del rival, destruye su mejor monstruo boca arriba y le hace su ATK", "judgment_of_anubis");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.mon(1, "dark_magician");
+		const int ja = e.colocar(0, "judgment_of_anubis");
+		const int mine = e.colocar(0, "trap_hole");
+		e.mano(0, "celtic_guardian");
+		const int k = e.mano(1, "mystical_space_typhoon");
+		VERIFICA(e.activar(1, H(1, k), { MT(0, mine) }), "MST no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, ja), {}, { 0 }), "Judgment of Anubis no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mt[(size_t)mine].id == "trap_hole" && e.d.l[1].monstruos() == 0 && e.d.l[1].lp == LP_INICIAL - 2500, "Trap Hole %s, monstruos rival %d, LP %d",
+		         e.d.l[0].mt[(size_t)mine].id.c_str(), e.d.l[1].monstruos(), e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Riryoku Field: niega una magia que toma 1 monstruo (Change of Heart) y la destruye", "riryoku_field");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o = e.mon(0, "dark_magician");
+		const int rf = e.colocar(0, "riryoku_field");
+		const int k = e.mano(1, "change_of_heart");
+		VERIFICA(e.activar(1, H(1, k), { M(0, o) }), "Change of Heart no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, rf)), "Riryoku Field no respondio");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "dark_magician") >= 0 && e.enCementerio(1, "change_of_heart") == 1, "el rival se llevo al monstruo");
+		fin();
+	}
+	{
+		caso("Royal Surrender: niega una trampa continua (Call of the Haunted) y la destruye", "royal_surrender");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.l[1].cementerio = { "dark_magician" };
+		const int ch = e.colocar(1, "call_of_the_haunted");
+		const int rs = e.colocar(0, "royal_surrender");
+		VERIFICA(e.activar(1, MT(1, ch), { Lugar{ 1, EN_CEMENTERIO, 0 } }), "Call of the Haunted no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, rs)), "Royal Surrender no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.enCementerio(1, "call_of_the_haunted") == 1 && e.d.l[1].mt[(size_t)ch].vacia(), "Call of the Haunted siguio");
+		fin();
+	}
+	{
+		caso("Spell-Stopping Statute: niega una magia continua (Messenger of Peace) y la destruye", "spell_stopping_statute");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int ss = e.colocar(0, "spell_stopping_statute");
+		const int k = e.mano(1, "messenger_of_peace");
+		VERIFICA(e.activar(1, H(1, k)), "Messenger of Peace no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, ss)), "Spell-Stopping Statute no respondio");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[1].tieneBocaArriba("messenger_of_peace") && e.enCementerio(1, "messenger_of_peace") == 1, "Messenger of Peace siguio");
+		fin();
+	}
+	{
+		caso("Trap Jammer: en la batalla niega la Mirror Force del rival", "trap_jammer");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "summoned_skull");
+		e.mon(1, "kuriboh");
+		const int mf = e.colocar(1, "mirror_force");
+		const int tj = e.colocar(0, "trap_jammer");
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 1 && e.activar(1, MT(1, mf)), "Mirror Force no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, tj)), "Trap Jammer no respondio");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)a].vacia() && e.enCementerio(1, "mirror_force") == 1, "Summoned Skull destruido por Mirror Force");
+		fin();
+	}
+	{
+		caso("Trap of Board Eraser: niega el danno de Hinotama y el rival descarta 1", "trap_of_board_eraser");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int be = e.colocar(0, "trap_of_board_eraser");
+		e.mano(1, "celtic_guardian");
+		const int k = e.mano(1, "hinotama");
+		VERIFICA(e.activar(1, H(1, k)), "Hinotama no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, be)), "Board Eraser no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL && e.d.l[1].mano.empty() && e.enCementerio(1, "celtic_guardian") == 1, "LP %d, mano rival %d", e.d.l[0].lp,
+		         (int)e.d.l[1].mano.size());
+		fin();
+	}
+	{
+		caso("Tutan Mask: niega una magia que toma a 1 Zombi boca arriba", "tutan_mask");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o = e.mon(0, "dark_assailant");
+		const int tm = e.colocar(0, "tutan_mask");
+		const int k = e.mano(1, "change_of_heart");
+		VERIFICA(e.activar(1, H(1, k), { M(0, o) }), "Change of Heart no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, tm)), "Tutan Mask no respondio");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "dark_assailant") >= 0 && e.enCementerio(1, "change_of_heart") == 1, "el rival se llevo al Zombi");
+		fin();
+	}
+	{
+		caso("Curse of Royal: niega el Mystical Space Typhoon que destruiria 1 magia/trampa", "curse_of_royal");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int cr = e.colocar(0, "curse_of_royal");
+		const int mine = e.colocar(0, "trap_hole");
+		const int k = e.mano(1, "mystical_space_typhoon");
+		VERIFICA(e.activar(1, H(1, k), { MT(0, mine) }), "MST no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, cr)), "Curse of Royal no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mt[(size_t)mine].id == "trap_hole" && e.enCementerio(1, "mystical_space_typhoon") == 1, "Trap Hole destruida");
+		fin();
+	}
+	{
+		caso("Jar Robber: niega Pot of Greed del rival (no roba) y tu robas 1", "jar_robber");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int jr = e.colocar(0, "jar_robber");
+		const size_t m0 = e.d.l[0].mano.size();
+		const int k = e.mano(1, "pot_of_greed");
+		VERIFICA(e.activar(1, H(1, k)), "Pot of Greed no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, jr)), "Jar Robber no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].mano.empty() && e.d.l[0].mano.size() == m0 + 1, "mano rival %d (esperado 0), propia +%d (esperado 1)", (int)e.d.l[1].mano.size(),
+		         (int)(e.d.l[0].mano.size() - m0));
+		fin();
+	}
+	{
+		caso("Spell Shield Type-8: niega una magia que toma 1 monstruo (Change of Heart)", "spell_shield_type_8");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o = e.mon(0, "dark_magician");
+		const int s8 = e.colocar(0, "spell_shield_type_8");
+		const int k = e.mano(1, "change_of_heart");
+		VERIFICA(e.activar(1, H(1, k), { M(0, o) }), "Change of Heart no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, s8)), "Spell Shield no respondio");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "dark_magician") >= 0 && e.enCementerio(1, "change_of_heart") == 1, "el rival se llevo al monstruo");
+		fin();
+	}
+	// ---- lote 3 del probador: trampas normales
+	{
+		caso("Anti Raigeki: niega el Raigeki del rival y destruye los monstruos del rival", "anti_raigeki");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.mon(0, "battle_ox");
+		e.mon(1, "dark_magician");
+		const int ar = e.colocar(0, "anti_raigeki");
+		const int k = e.mano(1, "raigeki");
+		VERIFICA(e.activar(1, H(1, k)), "Raigeki no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, ar)), "Anti Raigeki no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].monstruos() == 1 && e.d.l[1].monstruos() == 0, "monstruos %d/%d (esperado 1/0)", e.d.l[0].monstruos(), e.d.l[1].monstruos());
+		fin();
+	}
+	{
+		caso("Archfiend's Roar: paga 500 e invoca un Archfiend del cementerio; se destruye en la fase final", "archfiend_s_roar");
+		Escena e;
+		e.d.l[0].cementerio = { "archfiend_soldier" };
+		VERIFICA(usarColocada(e, 0, "archfiend_s_roar"), "no se activo");
+		const int z = buscarZona(e, 0, "archfiend_soldier");
+		VERIFICA(z >= 0 && e.d.l[0].lp == LP_INICIAL - 500, "no llego (zona %d), LP %d", z, e.d.l[0].lp);
+		pasarFases(e, 1);
+		VERIFICA(buscarZona(e, 0, "archfiend_soldier") < 0 && e.enCementerio(0, "archfiend_soldier") == 1, "no se destruyo en la fase final");
+		fin();
+	}
+	{
+		caso("Blasting the Ruins: con 30 cartas en el cementerio, 3000 al rival; con 29 no", "blasting_the_ruins");
+		Escena e;
+		for (int k = 0; k < 29; k++) e.d.l[0].cementerio.push_back("celtic_guardian");
+		const int z = e.colocar(0, "blasting_the_ruins");
+		VERIFICA(!motivoNoActivar(e.d, 0, MT(0, z), false).empty(), "se activa con 29");
+		e.d.l[0].cementerio.push_back("celtic_guardian");
+		VERIFICA(e.activar(0, MT(0, z)), "no se activo con 30");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 3000, "LP rival %d", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Call of the Grave: niega el Monster Reborn del rival", "call_of_the_grave");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.l[1].cementerio = { "dark_magician" };
+		const int cg = e.colocar(0, "call_of_the_grave");
+		const int k = e.mano(1, "monster_reborn");
+		VERIFICA(e.activar(1, H(1, k), { Lugar{ 1, EN_CEMENTERIO, 0 } }), "Monster Reborn no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, cg)), "Call of the Grave no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.enCementerio(1, "dark_magician") == 1, "Dark Magician revivio");
+		fin();
+	}
+	{
+		caso("Disturbance Strategy: el rival baraja su mano en el mazo y roba lo mismo", "disturbance_strategy");
+		Escena e;
+		e.d.l[1].mano = { "raigeki", "dark_hole", "pot_of_greed" };
+		const size_t mazo0 = e.d.l[1].mazo.size();
+		VERIFICA(usarColocada(e, 0, "disturbance_strategy"), "no se activo");
+		VERIFICA(e.d.l[1].mano.size() == 3 && e.d.l[1].mazo.size() == mazo0, "mano %d, mazo %d (antes %d)", (int)e.d.l[1].mano.size(), (int)e.d.l[1].mazo.size(),
+		         (int)mazo0);
+		fin();
+	}
+	{
+		caso("Gryphon Wing: niega Harpie's Feather Duster y destruye las magias/trampas del rival", "gryphon_wing");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int gw = e.colocar(0, "gryphon_wing");
+		const int mine = e.colocar(0, "trap_hole");
+		e.colocar(1, "mirror_force");
+		const int k = e.mano(1, "harpie_s_feather_duster");
+		VERIFICA(e.activar(1, H(1, k)), "Feather Duster no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, gw)), "Gryphon Wing no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mt[(size_t)mine].id == "trap_hole" && e.d.l[1].libreMT() == 0 && e.d.l[1].colocadasMT() == 0, "Trap Hole %s, colocadas rival %d",
+		         e.d.l[0].mt[(size_t)mine].id.c_str(), e.d.l[1].colocadasMT());
+		fin();
+	}
+	{
+		caso("Heavy Slump: con 8+ cartas en la mano el rival las baraja y roba 2", "heavy_slump");
+		Escena e;
+		for (int k = 0; k < 8; k++) e.mano(1, "celtic_guardian");
+		VERIFICA(usarColocada(e, 0, "heavy_slump"), "no se activo");
+		VERIFICA(e.d.l[1].mano.size() == 2, "mano rival %d (esperado 2)", (int)e.d.l[1].mano.size());
+		fin();
+	}
+	{
+		caso("Hidden Spellbook: 2 magias del cementerio vuelven al mazo", "hidden_spellbook");
+		Escena e;
+		e.d.l[0].cementerio = { "raigeki", "dark_hole", "battle_ox" };
+		const size_t mazo0 = e.d.l[0].mazo.size();
+		VERIFICA(usarColocada(e, 0, "hidden_spellbook"), "no se activo");
+		VERIFICA(e.d.l[0].mazo.size() == mazo0 + 2 && e.enCementerio(0, "raigeki") == 0 && e.enCementerio(0, "dark_hole") == 0, "mazo %d (antes %d)",
+		         (int)e.d.l[0].mazo.size(), (int)mazo0);
+		fin();
+	}
+	{
+		caso("Ray of Hope: 2 monstruos de LUZ del cementerio vuelven al mazo", "ray_of_hope");
+		Escena e;
+		e.d.l[0].cementerio = { "mystical_elf", "shining_friendship", "battle_ox" };
+		const size_t mazo0 = e.d.l[0].mazo.size();
+		VERIFICA(usarColocada(e, 0, "ray_of_hope"), "no se activo");
+		VERIFICA(e.d.l[0].mazo.size() == mazo0 + 2 && e.d.l[0].cementerio.size() == 2 && e.enCementerio(0, "battle_ox") == 1, "mazo %d (antes %d)",
+		         (int)e.d.l[0].mazo.size(), (int)mazo0);
+		fin();
+	}
+	{
+		caso("Michizure: un monstruo propio va del campo al cementerio: destruye 1 monstruo", "michizure");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.mon(0, "battle_ox");
+		e.mon(1, "dark_magician");
+		const int mz = e.colocar(0, "michizure");
+		const int k = e.mano(1, "raigeki");
+		VERIFICA(e.activar(1, H(1, k)), "Raigeki no se activo");
+		e.pasarTodo();
+		// (el rival pasa a su fase final: ahi tiene la ocasion de activarla)
+		Jugada f;
+		f.tipo = J_FASE;
+		for (int g = 0; g < 12 && !(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0) && e.d.activo == 1; g++)
+			if (!e.d.aplicar(f)) e.pasarTodo();
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, mz), { M(1, 0) }), "Michizure no se pudo activar");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.enCementerio(0, "michizure") == 1, "Michizure no destruyo (monstruos rival %d)", e.d.l[1].monstruos());
+		fin();
+	}
+	{
+		caso("Nutrient Z: ante 2000+ de danno de batalla, gana 4000 primero", "nutrient_z");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int a = e.mon(1, "dark_magician");
+		const int nz = e.colocar(0, "nutrient_z");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		for (int g = 0; g < 8 && e.d.ef.preg.tipo != P_NADA; g++) {
+			if (e.d.ef.preg.lado == 0 && motivoNoActivar(e.d, 0, MT(0, nz), true).empty()) {
+				e.activar(0, MT(0, nz));
+				continue;
+			}
+			e.pasarTodo();
+		}
+		VERIFICA(e.d.l[0].lp == LP_INICIAL + 4000 - 2500, "LP %d (esperado %d)", e.d.l[0].lp, LP_INICIAL + 1500);
+		fin();
+	}
+	{
+		caso("Pikeru's Circle of Enchantment: el danno de efectos es 0 este turno", "pikeru_s_circle_of_enchantment");
+		Escena e;
+		VERIFICA(usarColocada(e, 0, "pikeru_s_circle_of_enchantment"), "no se activo");
+		e.d.activo = 1;
+		const int k = e.mano(1, "hinotama");
+		VERIFICA(e.activar(1, H(1, k)), "Hinotama no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL, "LP %d (esperado %d)", e.d.l[0].lp, LP_INICIAL);
+		fin();
+	}
+	{
+		caso("Time Seal: el rival se salta su proxima fase de robo", "time_seal");
+		Escena e;
+		VERIFICA(usarColocada(e, 0, "time_seal"), "no se activo");
+		const size_t m0 = e.d.l[1].mano.size();
+		pasarFases(e, 1);
+		VERIFICA(e.d.activo == 1 && e.d.l[1].mano.size() == m0, "el rival robo (mano %d, antes %d)", (int)e.d.l[1].mano.size(), (int)m0);
+		fin();
+	}
+	{
+		caso("Frozen Soul: con 2000 LP menos que el rival, el rival se salta su proxima fase de batalla", "frozen_soul");
+		Escena e;
+		e.d.l[0].lp = 5000;
+		VERIFICA(usarColocada(e, 0, "frozen_soul"), "no se activo con 3000 LP de diferencia");
+		e.mon(1, "dark_magician");
+		pasarFases(e, 1);
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		e.pasarTodo();
+		VERIFICA(e.d.activo == 1 && e.d.fase != F_BATALLA, "el rival entro en la fase de batalla");
+		fin();
+	}
+	{
+		caso("World Suppression: niega la magia de campo activada (Sogen no suma) ese turno", "world_suppression");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int c = e.mon(1, "celtic_guardian");
+		const int ws = e.colocar(0, "world_suppression");
+		const int k = e.mano(1, "sogen");
+		VERIFICA(e.activar(1, H(1, k)), "Sogen no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, ws)), "World Suppression no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)c].atkEf == 1400, "Celtic con Sogen %d (esperado 1400)", e.d.l[1].m[(size_t)c].atkEf);
+		fin();
+	}
+	// ---- lote 4 del probador: magias continuas y de equipo
+	{
+		caso("Banner of Courage: +200 ATK a los tuyos solo en tu fase de batalla", "banner_of_courage");
+		Escena e;
+		const int z = e.mon(0, "battle_ox");
+		mtArriba(e, 0, "banner_of_courage");
+		e.d.recalcular();
+		VERIFICA(e.d.l[0].m[(size_t)z].atkEf == 1700, "fuera de la batalla %d (esperado 1700)", e.d.l[0].m[(size_t)z].atkEf);
+		e.d.fase = F_BATALLA;
+		e.d.recalcular();
+		VERIFICA(e.d.l[0].m[(size_t)z].atkEf == 1900, "en tu batalla %d (esperado 1900)", e.d.l[0].m[(size_t)z].atkEf);
+		e.d.activo = 1;
+		e.d.recalcular();
+		VERIFICA(e.d.l[0].m[(size_t)z].atkEf == 1700, "en la batalla del rival %d (esperado 1700)", e.d.l[0].m[(size_t)z].atkEf);
+		fin();
+	}
+	{
+		caso("Burning Land: al activarse destruye las magias de campo; en cada fase de espera el del turno recibe 500", "burning_land");
+		Escena e;
+		const int k = e.mano(1, "sogen");
+		e.d.activo = 1;
+		VERIFICA(e.activar(1, H(1, k)), "Sogen no se activo");
+		e.pasarTodo();
+		e.d.activo = 0;
+		VERIFICA(usar(e, "burning_land"), "no se activo");
+		VERIFICA(e.d.l[1].campo.vacia() && e.enCementerio(1, "sogen") == 1, "Sogen siguio");
+		pasarFases(e, 1);
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 500 && e.d.l[0].lp == LP_INICIAL, "LP %d / %d (esperado 8000 / 7500)", e.d.l[0].lp, e.d.l[1].lp);
+		fin();
+	}
+	{
+		// (el motor lo hace como "nadie puede atacar": la fase de batalla se puede abrir pero sin ataques)
+		caso("D.D. Borderline: sin magias en tu cementerio nadie ataca; con una magia, si", "d_d_borderline");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "battle_ox");
+		const int b = e.mon(1, "celtic_guardian");
+		mtArriba(e, 0, "d_d_borderline");
+		e.d.l[0].cementerio.clear();
+		VERIFICA(!e.d.puedeAtacar(0, a) && !e.d.puedeAtacar(1, b), "se puede atacar sin magias en el cementerio");
+		e.d.l[0].cementerio.push_back("pot_of_greed");
+		VERIFICA(e.d.puedeAtacar(0, a), "con una magia en el cementerio no se puede atacar");
+		fin();
+	}
+	{
+		caso("Gravekeeper's Servant: para declarar un ataque, el rival manda la carta de arriba de su mazo al cementerio", "gravekeeper_s_servant");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int a = e.mon(1, "battle_ox");
+		mtArriba(e, 0, "gravekeeper_s_servant");
+		const size_t mazo0 = e.d.l[1].mazo.size(), cem0 = e.d.l[1].cementerio.size();
+		VERIFICA(atacar(e, a, -1), "no pudo atacar");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].mazo.size() == mazo0 - 1 && e.d.l[1].cementerio.size() == cem0 + 1, "mazo %d (antes %d)", (int)e.d.l[1].mazo.size(), (int)mazo0);
+		fin();
+	}
+	{
+		caso("Lighten the Load: un nivel 7+ de la mano vuelve al mazo y robas 1", "lighten_the_load");
+		Escena e;
+		const int z = mtArriba(e, 0, "lighten_the_load");
+		e.mano(0, "blue_eyes");
+		const size_t mazo0 = e.d.l[0].mazo.size();
+		VERIFICA(e.activar(0, MT(0, z)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mano.size() == 1 && e.d.l[0].mano[0] != "blue_eyes" && e.d.l[0].mazo.size() == mazo0, "mano %d", (int)e.d.l[0].mano.size());
+		fin();
+	}
+	{
+		caso("Poison Fangs: una Bestia hace danno de batalla: 500 mas", "poison_fangs");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "silver_fang");
+		mtArriba(e, 0, "poison_fangs");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 1200 - 500, "LP rival %d (esperado %d)", e.d.l[1].lp, LP_INICIAL - 1700);
+		fin();
+	}
+	{
+		caso("Precious Cards from Beyond: invocacion con 2 sacrificios: robas 2", "precious_cards_from_beyond");
+		Escena e;
+		mtArriba(e, 0, "precious_cards_from_beyond");
+		e.mon(0, "celtic_guardian");
+		e.mon(0, "battle_ox");
+		const int k = e.mano(0, "blue_eyes");
+		const size_t m0 = e.d.l[0].mano.size();
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { 0, 1 };
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mano.size() == m0 - 1 + 2, "mano %d (esperado %d)", (int)e.d.l[0].mano.size(), (int)(m0 + 1));
+		fin();
+	}
+	{
+		caso("Soul Absorption: Bottomless Trap Hole destierra al invocado del rival: 500 LP", "soul_absorption");
+		Escena e;
+		mtArriba(e, 0, "soul_absorption");
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int bt = e.colocar(0, "bottomless_trap_hole");
+		const int k = e.mano(1, "vorse_raider");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		const int zv = buscarZona(e, 1, "vorse_raider");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, bt), { M(1, zv) }), "Bottomless no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].desterrados.size() == 1 && e.d.l[0].lp == LP_INICIAL + 500, "desterrados %d, LP %d (esperado 8500)", (int)e.d.l[1].desterrados.size(),
+		         e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Spring of Rebirth: Compulsory Evacuation Device devuelve un monstruo a la mano: 500 LP", "spring_of_rebirth");
+		Escena e;
+		mtArriba(e, 0, "spring_of_rebirth");
+		const int o = e.mon(1, "dark_magician");
+		VERIFICA(usarColocada(e, 0, "compulsory_evacuation_device", { M(1, o) }), "no se activo");
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.d.l[0].lp == LP_INICIAL + 500, "monstruos rival %d, LP %d (esperado 8500)", e.d.l[1].monstruos(), e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("The Dark Door: solo 1 monstruo ataca en cada fase de batalla", "the_dark_door");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "battle_ox");
+		const int b = e.mon(0, "celtic_guardian");
+		mtArriba(e, 0, "the_dark_door");
+		VERIFICA(atacar(e, a, -1), "el primero no ataco");
+		e.pasarTodo();
+		VERIFICA(!e.d.puedeAtacar(0, b), "el segundo puede atacar");
+		fin();
+	}
+	{
+		caso("Vengeful Bog Spirit: los monstruos no atacan el turno en que se invocan", "vengeful_bog_spirit");
+		Escena e;
+		mtArriba(e, 0, "vengeful_bog_spirit");
+		const int k = e.mano(0, "battle_ox");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		e.pasarTodo();
+		const int z = buscarZona(e, 0, "battle_ox");
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		e.pasarTodo();
+		VERIFICA(z >= 0 && e.d.fase == F_BATALLA && !e.d.puedeAtacar(0, z), "el recien invocado puede atacar");
+		fin();
+	}
+	{
+		caso("Morale Boost: activar un equipo da 1000 LP a quien lo controla; un equipo que deja el campo quita 1000", "morale_boost");
+		Escena e;
+		mtArriba(e, 1, "morale_boost");
+		const int z = e.mon(0, "battle_ox");
+		VERIFICA(usar(e, "axe_of_despair", { M(0, z) }), "no se equipo");
+		VERIFICA(e.d.l[0].lp == LP_INICIAL + 1000, "LP %d (esperado 9000)", e.d.l[0].lp);
+		const int zm = e.colocar(1, "mystical_space_typhoon");
+		int ze = -1;
+		for (int i = 0; i < ZONAS; i++)
+			if (e.d.l[0].mt[(size_t)i].id == "axe_of_despair") ze = i;
+		e.d.activo = 1;
+		VERIFICA(ze >= 0 && e.activar(1, MT(1, zm), { MT(0, ze) }), "MST no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL, "LP %d (esperado 8000)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Ritual Weapon: equipa a un ritual de nivel 6 o menos: +1500 ATK/DEF", "ritual_weapon");
+		Escena e;
+		const int z = e.mon(0, "hungry_burger");
+		const int a0 = e.d.l[0].m[(size_t)z].atkEf, d0 = e.d.l[0].m[(size_t)z].defEf;
+		VERIFICA(usar(e, "ritual_weapon", { M(0, z) }), "no se equipo");
+		VERIFICA(e.d.l[0].m[(size_t)z].atkEf == a0 + 1500 && e.d.l[0].m[(size_t)z].defEf == d0 + 1500, "ATK/DEF %d/%d", e.d.l[0].m[(size_t)z].atkEf,
+		         e.d.l[0].m[(size_t)z].defEf);
+		fin();
+	}
+	{
+		caso("Frontline Base: invoca de forma especial 1 Union de nivel 4 o menos de la mano", "frontline_base");
+		Escena e;
+		const int z = mtArriba(e, 0, "frontline_base");
+		e.d.l[0].mt[(size_t)z].contadores = 1;   // (ya activada: ahora se usa su efecto)
+		e.mano(0, "burning_beast");
+		VERIFICA(e.activar(0, MT(0, z)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "burning_beast") >= 0 && e.d.l[0].mano.empty(), "Burning Beast no llego");
+		fin();
+	}
+	{
+		caso("Two-Man Cell Battle: en la fase final, el del turno invoca 1 normal de nivel 4 de la mano", "two_man_cell_battle");
+		Escena e;
+		mtArriba(e, 0, "two_man_cell_battle");
+		e.mano(0, "battle_ox");
+		pasarFases(e, 1);
+		VERIFICA(buscarZona(e, 0, "battle_ox") >= 0, "Battle Ox no llego en la fase final");
+		fin();
+	}
+	// ---- lote 5 del probador: monstruos de efecto (combate y continuos)
+	{
+		caso("Atomic Firefly: destruido en batalla, quien lo destruyo recibe 1000", "atomic_firefly");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int f = e.mon(0, "atomic_firefly");
+		const int a = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, f), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[0].m[(size_t)f].vacia() && e.d.l[1].lp == LP_INICIAL - 1000, "LP rival %d (esperado 7000)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Black Tyranno: si el rival solo tiene monstruos en defensa, ataca directo", "black_tyranno");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "black_tyranno");
+		e.mon(1, "giant_soldier_of_stone", true);
+		VERIFICA(atacar(e, a, -1), "no pudo atacar directo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 2600, "LP rival %d (esperado 5400)", e.d.l[1].lp);
+		Escena g(F_BATALLA);
+		const int b = g.mon(0, "black_tyranno");
+		g.mon(1, "battle_ox");
+		VERIFICA(!atacar(g, b, -1), "ataco directo con un monstruo del rival en ataque");
+		fin();
+	}
+	{
+		caso("Dark Driceratops: perfora la defensa", "dark_driceratops");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "dark_driceratops");
+		const int o = e.mon(1, "celtic_guardian", true);   // 1200 DEF
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 1200, "LP rival %d (esperado 6800)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Hayabusa Knight: ataca dos veces", "hayabusa_knight");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "hayabusa_knight");
+		VERIFICA(atacar(e, a, -1), "primer ataque");
+		e.pasarTodo();
+		VERIFICA(atacar(e, a, -1), "segundo ataque");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 2000 && !e.d.puedeAtacar(0, a), "LP rival %d (esperado 6000)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Giant Orc: tras atacar pasa a defensa al final de la batalla y queda fijo", "giant_orc");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "giant_orc");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)a].defensa && motorPosicionFija(e.d, 0, a), "no quedo en defensa fijo");
+		fin();
+	}
+	{
+		caso("Kangaroo Champ: el que combate con el pasa a defensa tras el calculo", "kangaroo_champ");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int k = e.mon(0, "kangaroo_champ", true);
+		const int a = e.mon(1, "celtic_guardian");   // 1400 vs 700 DEF: Kangaroo se destruye, Celtic a defensa
+		VERIFICA(atacar(e, a, k), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)a].defensa, "el atacante no paso a defensa");
+		fin();
+	}
+	{
+		caso("Lesser Fiend: el que destruye en batalla queda desterrado", "lesser_fiend");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "lesser_fiend");
+		const int o = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)o].vacia() && e.d.l[1].desterrados.size() == 1 && e.enCementerio(1, "battle_ox") == 0, "Battle Ox no quedo desterrado");
+		fin();
+	}
+	{
+		caso("Luminous Soldier: contra un monstruo de OSCURIDAD +500 en el paso de danno (2600 vence a Dark Magician)", "luminous_soldier");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "luminous_soldier");
+		const int o = e.mon(1, "dark_magician");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)o].vacia() && !e.d.l[0].m[(size_t)a].vacia() && e.d.l[1].lp == LP_INICIAL - 100, "DM %s, LP rival %d",
+		         e.d.l[1].m[(size_t)o].vacia() ? "destruido" : "vivo", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Mermaid Knight: con Umi ataca dos veces", "mermaid_knight");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "mermaid_knight");
+		e.d.l[0].campo = MagiaTrampa{ "umi", false };
+		e.d.l[0].campo.uid = e.d.nuevoUid();
+		e.d.recalcular();
+		VERIFICA(atacar(e, a, -1), "primer ataque");
+		e.pasarTodo();
+		VERIFICA(atacar(e, a, -1), "segundo ataque");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 2 * 1700, "LP rival %d (esperado %d)", e.d.l[1].lp, LP_INICIAL - 3400);
+		fin();
+	}
+	{
+		caso("Gravekeeper's Cannonholder: sacrifica otro Gravekeeper's: 700 al rival", "gravekeeper_s_cannonholder");
+		Escena e;
+		const int z = e.mon(0, "gravekeeper_s_cannonholder");
+		e.mon(0, "gravekeeper_s_spy");
+		VERIFICA(e.activar(0, M(0, z)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 700 && buscarZona(e, 0, "gravekeeper_s_spy") < 0, "LP rival %d (esperado 7300)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Manju of the Ten Thousand Hands: al invocarse normal, busca un ritual del mazo", "manju_of_the_ten_thousand_hands");
+		Escena e;
+		e.d.l[0].mazo.push_back("black_luster_ritual");
+		const int k = e.mano(0, "manju_of_the_ten_thousand_hands");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(std::find(e.d.l[0].mano.begin(), e.d.l[0].mano.end(), "black_luster_ritual") != e.d.l[0].mano.end(), "no busco el ritual");
+		fin();
+	}
+	{
+		caso("Invasion of Flames: invocado normal, no se pueden activar trampas (Trap Hole no responde)", "invasion_of_flames");
+		Escena e;
+		const int th = e.colocar(1, "trap_hole");
+		const int k = e.mano(0, "invasion_of_flames");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		VERIFICA(motivoNoActivar(e.d, 1, MT(1, th), true) != "", "Trap Hole se puede activar");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "invasion_of_flames") >= 0, "Invasion of Flames no quedo");
+		fin();
+	}
+	{
+		caso("Harpie Lady 3: el que combate con ella no ataca en los 2 turnos siguientes del rival", "harpie_lady_3");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "harpie_lady_3");
+		const int o = e.mon(1, "giant_soldier_of_stone", true);   // 2000 DEF: Harpie no lo destruye
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)o].sinAtacarHasta >= e.d.turno + 3, "sinAtacarHasta %d (turno %d)", e.d.l[1].m[(size_t)o].sinAtacarHasta, e.d.turno);
+		fin();
+	}
+	{
+		caso("Cyber Harpie Lady: cuenta como Harpie Lady (Elegant Egotist trae a Harpie Lady Sisters)", "cyber_harpie_lady");
+		Escena e;
+		e.mon(0, "cyber_harpie_lady");
+		e.d.l[0].mazo.push_back("harpie_lady_sisters");
+		VERIFICA(usar(e, "elegant_egotist"), "Elegant Egotist no se activo con Cyber Harpie Lady");
+		VERIFICA(buscarZona(e, 0, "harpie_lady_sisters") >= 0, "no llegaron las Harpie Lady Sisters");
+		fin();
+	}
+	{
+		caso("Double Coston: vale por 2 sacrificios para un monstruo de OSCURIDAD (Dark Magician)", "double_coston");
+		Escena e;
+		const int z = e.mon(0, "double_coston");
+		const int k = e.mano(0, "dark_magician");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { z };
+		VERIFICA(e.d.aplicar(j), "no invoco a Dark Magician con Double Coston");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "dark_magician") >= 0, "Dark Magician no llego");
+		fin();
+	}
+	{
+		caso("Minar: descartado por un efecto del rival: 1000 al rival", "minar");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.l[0].mano = { "minar" };
+		const int k = e.mano(1, "delinquent_duo");
+		VERIFICA(e.activar(1, H(1, k)), "Delinquent Duo no se activo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.enCementerio(0, "minar") == 1 && e.d.l[1].lp == LP_INICIAL - 1000 - 1000, "LP rival %d (esperado 6000: 1000 de Delinquent Duo y 1000 de Minar)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Different Dimension Dragon: no se destruye en batalla con un monstruo de 1900 o menos", "different_dimension_dragon");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int d3 = e.mon(0, "different_dimension_dragon");
+		const int a = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, d3), "no ataco");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)d3].vacia() && e.d.l[0].lp == LP_INICIAL - 500, "DDD %s, LP %d", e.d.l[0].m[(size_t)d3].vacia() ? "destruido" : "vivo", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Armed Samurai - Ben Kei: con 1 equipo ataca 2 veces", "armed_samurai_ben_kei");
+		Escena e;
+		const int a = e.mon(0, "armed_samurai_ben_kei");
+		VERIFICA(usar(e, "axe_of_despair", { M(0, a) }), "no se equipo");
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		e.pasarTodo();
+		VERIFICA(atacar(e, a, -1), "primer ataque");
+		e.pasarTodo();
+		VERIFICA(atacar(e, a, -1), "segundo ataque");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 2 * 1500, "LP rival %d (esperado 5000)", e.d.l[1].lp);
+		fin();
+	}
+	// ---- lote 6 del probador: monstruos de efecto
+	for (const char* id : { "ooguchi", "rainbow_flower", "servant_of_catabolism" }) {
+		caso("Ooguchi / Rainbow Flower / Servant of Catabolism: atacan directo aunque el rival tenga monstruos", id);
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, id);
+		e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, -1), "%s no pudo atacar directo", id);
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - e.d.atk(id), "%s: LP rival %d", id, e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Rocket Jumper: si el rival solo tiene monstruos en defensa, ataca directo", "rocket_jumper");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "rocket_jumper");
+		e.mon(1, "giant_soldier_of_stone", true);
+		VERIFICA(atacar(e, a, -1), "no pudo atacar directo");
+		Escena g(F_BATALLA);
+		const int b = g.mon(0, "rocket_jumper");
+		g.mon(1, "battle_ox");
+		VERIFICA(!atacar(g, b, -1), "ataco directo con un monstruo del rival en ataque");
+		fin();
+	}
+	{
+		caso("Penumbral Soldier Lady: contra un monstruo de LUZ +1000 en el paso de danno", "penumbral_soldier_lady");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "penumbral_soldier_lady");
+		const int o = e.mon(1, "teva");   // LUZ 2000
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)o].vacia() && e.d.l[1].lp == LP_INICIAL - 1100, "Teva %s, LP rival %d (esperado 6900)", e.d.l[1].m[(size_t)o].vacia() ? "destruida" : "viva",
+		         e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Sacred Crane: invocado de forma especial, roba 1", "sacred_crane");
+		Escena e;
+		e.d.l[0].cementerio = { "sacred_crane" };
+		const size_t m0 = e.d.l[0].mano.size();
+		VERIFICA(usar(e, "monster_reborn", { Lugar{ 0, EN_CEMENTERIO, 0 } }), "Monster Reborn no se activo");
+		resolverDisparos(e);
+		VERIFICA(buscarZona(e, 0, "sacred_crane") >= 0 && e.d.l[0].mano.size() == m0 + 1, "mano %d (esperado %d)", (int)e.d.l[0].mano.size(), (int)m0 + 1);
+		fin();
+	}
+	{
+		caso("Sonic Bird: al invocarse normal, busca una magia ritual del mazo", "sonic_bird");
+		Escena e;
+		e.d.l[0].mazo.push_back("black_luster_ritual");
+		const int k = e.mano(0, "sonic_bird");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(std::find(e.d.l[0].mano.begin(), e.d.l[0].mano.end(), "black_luster_ritual") != e.d.l[0].mano.end(), "no busco la magia ritual");
+		fin();
+	}
+	{
+		caso("Spirit of the Breeze: boca arriba en ataque, +1000 LP en cada fase de espera propia", "spirit_of_the_breeze");
+		Escena e;
+		e.mon(0, "spirit_of_the_breeze");
+		pasarFases(e, 1);
+		pasarFases(e, 0);
+		VERIFICA(e.d.l[0].lp == LP_INICIAL + 1000, "LP %d (esperado 9000)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Spirit of the Pot of Greed: quien activa Pot of Greed roba 1 mas", "spirit_of_the_pot_of_greed");
+		Escena e;
+		e.mon(0, "spirit_of_the_pot_of_greed");
+		const size_t m0 = e.d.l[0].mano.size();
+		VERIFICA(usar(e, "pot_of_greed"), "Pot of Greed no se activo");
+		resolverDisparos(e);
+		VERIFICA(e.d.l[0].mano.size() == m0 + 3, "mano +%d (esperado 3)", (int)(e.d.l[0].mano.size() - m0));
+		fin();
+	}
+	{
+		caso("Teva: invocado con sacrificio, el rival no declara ataques en su proximo turno", "teva");
+		Escena e;
+		e.mon(0, "celtic_guardian");
+		const int k = e.mano(0, "teva");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { 0 };
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		const int r = e.mon(1, "battle_ox");
+		pasarFases(e, 1);
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		e.pasarTodo();
+		VERIFICA(e.d.activo == 1 && !e.d.puedeAtacar(1, r), "el rival puede atacar");
+		fin();
+	}
+	{
+		caso("Timeater: destruye en batalla: el rival se salta su proxima fase principal 1", "timeater");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "timeater");
+		const int o = e.mon(1, "celtic_guardian");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		pasarFases(e, 1);
+		VERIFICA(e.d.activo == 1 && e.d.fase != F_PRINCIPAL1, "el rival esta en su fase principal 1");
+		fin();
+	}
+	{
+		caso("Twin-Headed Beast: ataca dos veces", "twinheaded_beast");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "twinheaded_beast");
+		VERIFICA(atacar(e, a, -1), "primer ataque");
+		e.pasarTodo();
+		VERIFICA(atacar(e, a, -1), "segundo ataque");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 3400, "LP rival %d (esperado 4600)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Two Thousand Needles: en defensa, el atacante con menos ATK que su DEF se destruye", "two_thousand_needles");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int n = e.mon(0, "two_thousand_needles", true);
+		const int a = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, n), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)a].vacia() && !e.d.l[0].m[(size_t)n].vacia(), "Battle Ox %s", e.d.l[1].m[(size_t)a].vacia() ? "destruido" : "vivo");
+		fin();
+	}
+	{
+		caso("Winged Kuriboh: destruido, ese turno no recibes danno de batalla", "winged_kuriboh");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int w = e.mon(0, "winged_kuriboh", true);   // (en defensa: el primer combate no hace danno)
+		const int a = e.mon(1, "battle_ox");
+		const int b = e.mon(1, "celtic_guardian");
+		VERIFICA(atacar(e, a, w), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(atacar(e, b, -1), "no ataco directo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL, "LP %d (esperado 8000)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Mushroom Man #2: su controlador pierde 300 en su fase de espera", "mushroom_man_2");
+		Escena e;
+		e.mon(0, "mushroom_man_2");
+		pasarFases(e, 1);
+		pasarFases(e, 0);
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 300, "LP %d (esperado 7700)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Unshaven Angler: vale por 2 sacrificios para un monstruo de AGUA", "unshaven_angler");
+		Escena e;
+		const int z = e.mon(0, "unshaven_angler");
+		const int k = e.mano(0, "gogiga_gagagigo");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { z };
+		VERIFICA(e.d.aplicar(j), "no invoco a Gogiga Gagagigo con Unshaven Angler");
+		fin();
+	}
+	{
+		caso("Versago the Destroyer: sustituye a un material de fusion (Masaki + Versago = Flame Swordsman)", "versago_the_destroyer");
+		Escena e;
+		e.d.l[0].extra = { "flame_swordsman" };
+		const int p = e.mano(0, "polymerization");
+		e.mano(0, "versago_the_destroyer");
+		e.mano(0, "masaki_the_legendary_swordsman");
+		Jugada j;
+		j.tipo = J_FUSION;
+		j.mano = p;
+		j.carta = "flame_swordsman";
+		j.manoExtra = { 1, 2 };
+		VERIFICA(e.d.aplicar(j), "no fusiono con Versago");
+		fin();
+	}
+	// ---- lote 7 del probador: trampas normales
+	{
+		caso("A Feint Plan: el ataque a un monstruo boca abajo se niega y ese turno no se atacan boca abajo", "a_feint_plan");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o = e.mon(0, "celtic_guardian", true, true);
+		const int a = e.mon(1, "battle_ox");
+		const int fp = e.colocar(0, "a_feint_plan");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, fp)), "A Feint Plan no respondio");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)o].vacia() && e.d.l[0].m[(size_t)o].bocaAbajo, "el boca abajo fue atacado");
+		fin();
+	}
+	{
+		caso("Absolute End: en el turno del rival, sus ataques son directos", "absolute_end");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o = e.mon(0, "giant_soldier_of_stone", true);
+		const int a = e.mon(1, "battle_ox");
+		const int ae = e.colocar(0, "absolute_end");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, ae)), "Absolute End no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 1700, "LP %d (esperado 6300: directo)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Big Burn: el rival activa algo que toma un monstruo del cementerio: se destierran los monstruos de los cementerios", "big_burn");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.l[1].cementerio = { "dark_magician", "pot_of_greed" };
+		e.d.l[0].cementerio = { "battle_ox" };
+		const int bb = e.colocar(0, "big_burn");
+		const int k = e.mano(1, "monster_reborn");
+		VERIFICA(e.activar(1, H(1, k), { Lugar{ 1, EN_CEMENTERIO, 0 } }), "Monster Reborn no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, bb)), "Big Burn no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.enCementerio(0, "battle_ox") == 0 && e.enCementerio(1, "pot_of_greed") == 1, "quedaron monstruos en los cementerios");
+		fin();
+	}
+	{
+		caso("Blast Held by a Tribute: ataca uno invocado con sacrificio: destruye los del rival en ataque y 1000 al rival", "blast_held_by_a_tribute");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.mon(1, "celtic_guardian");
+		const int k = e.mano(1, "summoned_skull");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { 0 };
+		VERIFICA(e.d.aplicar(j), "no invoco con sacrificio");
+		e.pasarTodo();
+		const int bh = e.colocar(0, "blast_held_by_a_tribute");
+		e.d.fase = F_BATALLA;
+		const int a = buscarZona(e, 1, "summoned_skull");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, bh)), "Blast Held no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.d.l[1].lp == LP_INICIAL - 1000 && e.d.l[0].lp == LP_INICIAL, "monstruos rival %d, LP rival %d", e.d.l[1].monstruos(),
+		         e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Cross Counter: atacan a tu defensa de mas DEF: el danno al atacante es el doble y el atacante se destruye", "cross_counter");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o = e.mon(0, "giant_soldier_of_stone", true);   // 2000 DEF
+		const int a = e.mon(1, "battle_ox");                       // 1700
+		const int cc = e.colocar(0, "cross_counter");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, cc)), "Cross Counter no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 600 && e.d.l[1].m[(size_t)a].vacia(), "LP rival %d (esperado 7400), Battle Ox %s", e.d.l[1].lp,
+		         e.d.l[1].m[(size_t)a].vacia() ? "destruido" : "vivo");
+		fin();
+	}
+	{
+		caso("Destruction Punch: atacan a tu defensa de mas DEF: el atacante se destruye (danno normal)", "destruction_punch");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o = e.mon(0, "giant_soldier_of_stone", true);
+		const int a = e.mon(1, "battle_ox");
+		const int dp = e.colocar(0, "destruction_punch");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, dp)), "Destruction Punch no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 300 && e.d.l[1].m[(size_t)a].vacia(), "LP rival %d (esperado 7700)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Exhausting Spell: quita todos los contadores de magia", "exhausting_spell");
+		Escena e;
+		const int z = e.mon(1, "breaker_the_magical_warrior");
+		e.d.l[1].m[(size_t)z].contadores = 1;
+		VERIFICA(usarColocada(e, 0, "exhausting_spell"), "no se activo");
+		VERIFICA(e.d.l[1].m[(size_t)z].contadores == 0, "contadores %d", e.d.l[1].m[(size_t)z].contadores);
+		fin();
+	}
+	{
+		caso("Fuh-Rin-Ka-Zan: con VIENTO, AGUA, FUEGO y TIERRA boca arriba, destruye los monstruos del rival", "fuh_rin_ka_zan");
+		Escena e;
+		e.mon(0, "sonic_bird");      // VIENTO
+		e.mon(0, "turtle_tiger");    // AGUA
+		e.mon(0, "fireyarou");       // FUEGO
+		e.mon(0, "battle_ox");       // TIERRA
+		e.mon(1, "dark_magician");
+		VERIFICA(usarColocada(e, 0, "fuh_rin_ka_zan"), "no se activo");
+		VERIFICA(e.d.l[1].monstruos() == 0, "quedan %d monstruos del rival", e.d.l[1].monstruos());
+		fin();
+	}
+	{
+		caso("Gorgon's Eye: este turno se niegan los efectos de los monstruos en defensa", "gorgon_s_eye");
+		Escena e;
+		const int z = e.mon(1, "giant_soldier_of_stone", true);
+		VERIFICA(usarColocada(e, 0, "gorgon_s_eye"), "no se activo");
+		VERIFICA(efectoNegado(e.d, e.d.l[1].m[(size_t)z]), "el de defensa no quedo negado");
+		fin();
+	}
+	{
+		caso("Hero Signal: destruido en batalla uno tuyo: invoca un Elemental HERO de nivel 4 o menos del mazo", "hero_signal");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o = e.mon(0, "celtic_guardian");
+		const int a = e.mon(1, "dark_magician");
+		const int hs = e.colocar(0, "hero_signal");
+		e.d.l[0].mazo.push_back("elemental_hero_clayman");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		Jugada f;
+		f.tipo = J_FASE;
+		for (int g = 0; g < 8 && !(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0) && e.d.activo == 1; g++)
+			if (!e.d.aplicar(f)) e.pasarTodo();
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, hs)), "Hero Signal no se pudo activar");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "elemental_hero_clayman") >= 0, "Clayman no llego");
+		fin();
+	}
+	{
+		caso("Huge Revolution: con los 3 en el campo, el rival descarta su mano y se destruyen sus cartas del campo", "huge_revolution");
+		Escena e;
+		e.mon(0, "people_running_about");
+		e.mon(0, "oppressed_people");
+		e.mon(0, "united_resistance");
+		e.mon(1, "dark_magician");
+		e.colocar(1, "mirror_force");
+		e.mano(1, "pot_of_greed");
+		VERIFICA(usarColocada(e, 0, "huge_revolution"), "no se activo");
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.d.l[1].libreMT() == 0 && e.d.l[1].mano.empty(), "quedan cartas del rival");
+		fin();
+	}
+	{
+		caso("Magician's Circle: ataca un Lanzador de Conjuros: cada uno invoca uno de 2000 o menos del mazo", "magician_s_circle");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int a = e.mon(1, "dark_magician_girl");
+		const int mc = e.colocar(0, "magician_s_circle");
+		e.d.l[0].mazo.push_back("mystical_elf");
+		e.d.l[1].mazo.push_back("mystical_elf");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, mc)), "Magician's Circle no respondio");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "mystical_elf") >= 0 && buscarZona(e, 1, "mystical_elf") >= 0, "no llegaron los dos");
+		fin();
+	}
+	{
+		caso("Metal Detector: con una trampa continua boca arriba, este turno se niegan las trampas continuas", "metal_detector");
+		Escena e;
+		mtArriba(e, 1, "gravity_bind");
+		const int a = e.mon(0, "summoned_skull");
+		VERIFICA(usarColocada(e, 0, "metal_detector"), "no se activo");
+		e.d.fase = F_BATALLA;
+		VERIFICA(e.d.puedeAtacar(0, a), "Gravity Bind sigue sin dejar atacar");
+		fin();
+	}
+	{
+		// (rama classic-motor2: colocar abre su ventana, V_COLOCADO: Shadow of Eyes responde justo ahi)
+		caso("Shadow of Eyes: el rival coloca un monstruo: pasa a ataque boca arriba (sin volteo)", "shadow_of_eyes");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int se = e.colocar(0, "shadow_of_eyes");
+		const int k = e.mano(1, "man_eater_bug");
+		Jugada j;
+		j.tipo = J_COLOCAR;
+		j.mano = k;
+		VERIFICA(e.d.aplicar(j), "no coloco");
+		const int z = buscarZona(e, 1, "man_eater_bug");
+		VERIFICA(e.d.ef.ventana.tipo == V_COLOCADO, "colocar no abrio su ventana");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, se), { M(1, z) }), "Shadow of Eyes no se pudo activar");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[1].m[(size_t)z].bocaAbajo && !e.d.l[1].m[(size_t)z].defensa && e.d.l[0].monstruos() == 0, "no quedo boca arriba en ataque");
+		fin();
+	}
+	{
+		// (rama classic-motor2: solo en la fase de espera del rival, ventana V_ESPERA; este turno no hay fase de batalla)
+		caso("Thunder of Ruler: en la fase de espera del rival: ese turno no hay fase de batalla", "thunder_of_ruler");
+		Escena e;
+		const int tr = e.colocar(0, "thunder_of_ruler");
+		const int r = e.mon(1, "battle_ox");
+		Jugada f;
+		f.tipo = J_FASE;
+		for (int g = 0; g < 6 && e.d.activo == 0; g++) {   // (pasa el turno: la espera del rival)
+			e.d.aplicar(f);
+			if (e.d.activo == 0) e.pasarTodo();
+		}
+		VERIFICA(e.d.activo == 1 && e.d.ef.ventana.tipo == V_ESPERA && e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0, "no hubo ventana en la espera del rival");
+		VERIFICA(e.activar(0, MT(0, tr)), "no se pudo activar en la espera del rival");
+		e.pasarTodo();
+		VERIFICA(e.d.fase == F_PRINCIPAL1, "el turno no siguio a la principal 1 (fase %d)", (int)e.d.fase);
+		e.d.aplicar(f);
+		VERIFICA(e.d.fase == F_PRINCIPAL2 && !e.d.puedeAtacar(1, r), "el rival entro en la batalla (fase %d)", (int)e.d.fase);
+		fin();
+	}
+	{
+		caso("Thunder of Ruler: fuera de la fase de espera del rival no se activa", "thunder_of_ruler");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int tr = e.colocar(0, "thunder_of_ruler");
+		VERIFICA(motivoNoActivar(e.d, 0, MT(0, tr), true) != "", "se activa en la batalla");
+		fin();
+	}
+	{
+		caso("Solomon's Lawbook: te saltas tu proxima fase de espera (Mushroom Man #2 no cobra)", "solomon_s_lawbook");
+		Escena e;
+		e.mon(0, "mushroom_man_2");
+		VERIFICA(usarColocada(e, 0, "solomon_s_lawbook"), "no se activo");
+		pasarFases(e, 1);
+		pasarFases(e, 0);
+		VERIFICA(e.d.l[0].lp == LP_INICIAL, "LP %d (esperado 8000: sin fase de espera)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Staunch Defender: tras activarla, el rival solo puede elegir como blanco al monstruo elegido", "staunch_defender");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o1 = e.mon(0, "celtic_guardian");
+		const int o2 = e.mon(0, "giant_soldier_of_stone", true);
+		const int a1 = e.mon(1, "mokey_mokey");
+		const int a2 = e.mon(1, "dark_magician");
+		const int sd = e.colocar(0, "staunch_defender");
+		VERIFICA(atacar(e, a1, o2), "no ataco");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, sd), { M(0, o2) }), "Staunch Defender no respondio");
+		e.pasarTodo();
+		VERIFICA(!atacar(e, a2, o1), "Dark Magician pudo atacar a Celtic Guardian");
+		fin();
+	}
+	// ---- lote 8 del probador: trampas continuas
+	{
+		caso("Chain Burst: quien activa una trampa recibe 1000 despues de que se resuelva", "chain_burst");
+		Escena e;
+		mtArriba(e, 0, "chain_burst");
+		const int o = e.mon(1, "battle_ox");
+		VERIFICA(usarColocada(e, 0, "compulsory_evacuation_device", { M(1, o) }), "no se activo la trampa");
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 1000, "LP %d (esperado 7000)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Dragon's Rage: tus Dragones perforan la defensa", "dragon_s_rage");
+		Escena e(F_BATALLA);
+		mtArriba(e, 0, "dragon_s_rage");
+		const int a = e.mon(0, "blue_eyes");
+		const int o = e.mon(1, "celtic_guardian", true);
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 1800, "LP rival %d (esperado 6200)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Greed: robar por efecto cuesta 500 por carta en la fase final", "greed");
+		Escena e;
+		mtArriba(e, 1, "greed");
+		VERIFICA(usar(e, "pot_of_greed"), "Pot of Greed no se activo");
+		pasarFases(e, 1);
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 1000, "LP %d (esperado 7000)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Imperial Order: niega los efectos de magia (Pot of Greed no roba); 700 en la fase de espera", "imperial_order");
+		Escena e;
+		mtArriba(e, 1, "imperial_order");
+		const size_t m0 = e.d.l[0].mano.size();
+		const int k = e.mano(0, "pot_of_greed");
+		const bool act = e.activar(0, H(0, k));
+		e.pasarTodo();
+		VERIFICA(!act || e.d.l[0].mano.size() == m0, "Pot of Greed robo con Imperial Order (mano %d)", (int)e.d.l[0].mano.size());
+		pasarFases(e, 1);
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 700 || !e.d.l[1].tieneBocaArriba("imperial_order"), "no pago 700 ni se destruyo (LP %d)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Infinite Dismissal: los de nivel 3 o menos invocados normal se destruyen en la fase final", "infinite_dismissal");
+		Escena e;
+		mtArriba(e, 1, "infinite_dismissal");
+		const int k = e.mano(0, "mystical_elf");   // nivel 4: se queda
+		const int k2 = e.mano(0, "baby_dragon");   // nivel 3: se va
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k2;
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		e.pasarTodo();
+		(void)k;
+		pasarFases(e, 1);
+		VERIFICA(buscarZona(e, 0, "baby_dragon") < 0 && e.enCementerio(0, "baby_dragon") == 1, "Baby Dragon siguio");
+		fin();
+	}
+	{
+		caso("Minor Goblin Official: con el rival en 3000 o menos, 500 en cada fase de espera del rival", "minor_goblin_official");
+		Escena e;
+		e.d.l[1].lp = 3000;
+		VERIFICA(usarColocada(e, 0, "minor_goblin_official"), "no se activo");
+		pasarFases(e, 1);
+		VERIFICA(e.d.l[1].lp == 2500, "LP rival %d (esperado 2500)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Remove Brainwashing: el control de los monstruos vuelve a sus duennos", "remove_brainwashing");
+		Escena e;
+		const int o = e.mon(1, "dark_magician");
+		VERIFICA(usar(e, "change_of_heart", { M(1, o) }), "Change of Heart no se activo");
+		VERIFICA(buscarZona(e, 0, "dark_magician") >= 0, "no tomo el control");
+		VERIFICA(usarColocada(e, 0, "remove_brainwashing"), "no se activo");
+		VERIFICA(buscarZona(e, 1, "dark_magician") >= 0 && buscarZona(e, 0, "dark_magician") < 0, "Dark Magician no volvio a su duenno");
+		fin();
+	}
+	{
+		caso("Robbin' Goblin: tu monstruo hace danno de batalla: el rival descarta 1 al azar", "robbin_goblin");
+		Escena e(F_BATALLA);
+		mtArriba(e, 0, "robbin_goblin");
+		const int a = e.mon(0, "battle_ox");
+		e.mano(1, "pot_of_greed");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].mano.empty() && e.enCementerio(1, "pot_of_greed") == 1, "el rival no descarto");
+		fin();
+	}
+	{
+		caso("Spatial Collapse: con 5 cartas en el campo, no se pone otra", "spatial_collapse");
+		Escena e;
+		for (int k = 0; k < 4; k++) e.mon(0, "celtic_guardian");
+		mtArriba(e, 0, "spatial_collapse");
+		const int k = e.mano(0, "battle_ox");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		VERIFICA(!e.d.aplicar(j), "invoco una sexta carta");
+		fin();
+	}
+	{
+		caso("Tower of Babel: con el 4o contador se destruye y quien activo esa magia recibe 3000", "tower_of_babel");
+		Escena e;
+		const int z = mtArriba(e, 1, "tower_of_babel");
+		e.d.l[1].mt[(size_t)z].contadores = 3;
+		VERIFICA(usar(e, "pot_of_greed"), "Pot of Greed no se activo");
+		VERIFICA(e.d.l[1].mt[(size_t)z].vacia() && e.d.l[0].lp == LP_INICIAL - 3000, "LP %d (esperado 5000)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Tornado Wall: con Umi boca arriba no recibes danno de batalla de los atacantes", "tornado_wall");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.l[0].campo = MagiaTrampa{ "umi", false };
+		e.d.l[0].campo.uid = e.d.nuevoUid();
+		mtArriba(e, 0, "tornado_wall");
+		const int a = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL, "LP %d (esperado 8000)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Narrow Pass: cada jugador invoca normal hasta 2 monstruos mas", "narrow_pass");
+		Escena e;
+		VERIFICA(usarColocada(e, 0, "narrow_pass"), "no se activo");
+		int invocados = 0;
+		for (int t = 0; t < 3; t++) {
+			e.d.l[0].invocoNormal = false;
+			const int k = e.mano(0, "celtic_guardian");
+			Jugada j;
+			j.tipo = J_INVOCAR;
+			j.mano = k;
+			if (e.d.aplicar(j)) invocados++;
+			e.pasarTodo();
+		}
+		VERIFICA(invocados == 2, "invoco %d (esperado 2)", invocados);
+		fin();
+	}
+	{
+		caso("The Eye of Truth: la mano del rival a la vista; con magias en la mano, el rival gana 1000 en su espera", "the_eye_of_truth");
+		Escena e;
+		mtArriba(e, 0, "the_eye_of_truth");
+		e.d.l[1].mano = { "pot_of_greed" };
+		pasarFases(e, 1);
+		VERIFICA(e.d.l[1].lp == LP_INICIAL + 1000, "LP rival %d (esperado 9000)", e.d.l[1].lp);
+		fin();
+	}
+	// ---- lote 9 del probador: magias y Uniones
+	{
+		caso("Blessings of the Nile: descartado por un efecto del rival: +1000 LP", "blessings_of_the_nile");
+		Escena e;
+		mtArriba(e, 0, "blessings_of_the_nile");
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.l[0].mano = { "celtic_guardian" };
+		const int k = e.mano(1, "delinquent_duo");
+		VERIFICA(e.activar(1, H(1, k)), "Delinquent Duo no se activo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[0].mano.empty() && e.d.l[0].lp == LP_INICIAL + 1000, "LP %d (esperado 9000)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Continuous Destruction Punch: atacan a tu defensa de mas DEF: el atacante se destruye", "continuous_destruction_punch");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		mtArriba(e, 0, "continuous_destruction_punch");
+		const int o = e.mon(0, "giant_soldier_of_stone", true);
+		const int a = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)a].vacia(), "Battle Ox siguio");
+		fin();
+	}
+	{
+		caso("Fuhma Shuriken: a un Ninja +700; al ir al cementerio, 700 al rival", "fuhma_shuriken");
+		Escena e;
+		const int z = e.mon(0, "strike_ninja");
+		const int a0 = e.d.l[0].m[(size_t)z].atkEf;
+		VERIFICA(usar(e, "fuhma_shuriken", { M(0, z) }), "no se equipo");
+		VERIFICA(e.d.l[0].m[(size_t)z].atkEf == a0 + 700, "ATK %d (esperado %d)", e.d.l[0].m[(size_t)z].atkEf, a0 + 700);
+		int ze = -1;
+		for (int i = 0; i < ZONAS; i++)
+			if (e.d.l[0].mt[(size_t)i].id == "fuhma_shuriken") ze = i;
+		e.d.activo = 1;
+		const int zm = e.colocar(1, "mystical_space_typhoon");
+		VERIFICA(ze >= 0 && e.activar(1, MT(1, zm), { MT(0, ze) }), "MST no se activo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 700, "LP rival %d (esperado 7300)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Fulfillment of the Contract: paga 800, invoca un ritual del cementerio y lo equipa", "fulfillment_of_the_contract");
+		Escena e;
+		e.d.l[0].cementerio = { "crab_turtle" };
+		VERIFICA(usar(e, "fulfillment_of_the_contract", { Lugar{ 0, EN_CEMENTERIO, 0 } }) || usar(e, "fulfillment_of_the_contract"), "no se activo");
+		VERIFICA(buscarZona(e, 0, "crab_turtle") >= 0 && e.d.l[0].lp == LP_INICIAL - 800, "Crab Turtle %d, LP %d", buscarZona(e, 0, "crab_turtle"), e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Last Will: si un monstruo tuyo fue al cementerio este turno, invoca uno de 1500 o menos del mazo", "last_will");
+		Escena e;
+		e.mon(0, "celtic_guardian");
+		e.d.alCementerio(0, 0);
+		e.d.l[0].mazo.push_back("mystical_elf");
+		VERIFICA(usar(e, "last_will"), "no se activo");
+		VERIFICA(e.d.l[0].monstruos() == 1, "no llego un monstruo (monstruos %d)", e.d.l[0].monstruos());
+		fin();
+	}
+	{
+		caso("Mind Wipe: con 3 o menos en la mano del rival, las baraja y roba las mismas", "mind_wipe");
+		Escena e;
+		e.d.l[1].mano = { "raigeki", "dark_hole" };
+		const size_t mazo0 = e.d.l[1].mazo.size();
+		VERIFICA(usar(e, "mind_wipe"), "no se activo");
+		VERIFICA(e.d.l[1].mano.size() == 2 && e.d.l[1].mazo.size() == mazo0, "mano %d, mazo %d", (int)e.d.l[1].mano.size(), (int)e.d.l[1].mazo.size());
+		fin();
+	}
+	{
+		caso("Return of the Doomed: descarta 1 monstruo; el tuyo destruido en batalla este turno vuelve a la mano al final", "return_of_the_doomed");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "celtic_guardian");
+		e.mon(1, "dark_magician");
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		e.pasarTodo();
+		e.d.fase = F_PRINCIPAL2;
+		e.mano(0, "battle_ox");
+		VERIFICA(usar(e, "return_of_the_doomed", {}, { 0 }), "no se activo");
+		pasarFases(e, 1);
+		VERIFICA(std::find(e.d.l[0].mano.begin(), e.d.l[0].mano.end(), "celtic_guardian") != e.d.l[0].mano.end(), "Celtic no volvio a la mano");
+		fin();
+	}
+	{
+		caso("Seal of the Ancients: paga 1000 y mira las colocadas del rival", "seal_of_the_ancients");
+		Escena e;
+		e.colocar(1, "mirror_force");
+		VERIFICA(usar(e, "seal_of_the_ancients"), "no se activo");
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 1000 && e.d.l[1].colocadasMT() == 1, "LP %d", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Sebek's Blessing: tu monstruo hace danno por ataque directo: ganas lo mismo", "sebek_s_blessing");
+		// (se activa antes del danno: en la batalla propia; el ataque directo que sigue la cobra)
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "battle_ox");
+		const int sb = e.colocar(0, "sebek_s_blessing");
+		VERIFICA(e.activar(0, MT(0, sb)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL + 1700, "LP %d (esperado 9700)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("The Graveyard in the Fourth Dimension: 2 monstruos LV del cementerio vuelven al mazo", "the_graveyard_in_the_fourth_dimension");
+		Escena e;
+		e.d.l[0].cementerio = { "horus_the_black_flame_dragon_lv4", "mystic_swordsman_lv2", "battle_ox" };
+		const size_t mazo0 = e.d.l[0].mazo.size();
+		VERIFICA(usar(e, "the_graveyard_in_the_fourth_dimension"), "no se activo");
+		VERIFICA(e.d.l[0].mazo.size() == mazo0 + 2 && e.enCementerio(0, "battle_ox") == 1, "mazo %d (antes %d)", (int)e.d.l[0].mazo.size(), (int)mazo0);
+		fin();
+	}
+	{
+		caso("Ultra Evolution Pill: sacrifica un Reptil: invoca un Dinosaurio de la mano", "ultra_evolution_pill");
+		Escena e;
+		const int z = e.mon(0, "ancient_lizard_warrior");
+		e.mano(0, "black_tyranno");
+		VERIFICA(usar(e, "ultra_evolution_pill", { M(0, z) }) || usar(e, "ultra_evolution_pill"), "no se activo");
+		VERIFICA(buscarZona(e, 0, "black_tyranno") >= 0 && buscarZona(e, 0, "ancient_lizard_warrior") < 0, "no llego el Dinosaurio");
+		fin();
+	}
+	{
+		caso("Reaper Scythe - Dreadscythe: +500 ATK por cada monstruo en los cementerios", "reaper_scythe_dreadscythe");
+		Escena e;
+		const int z = e.mon(0, "guardian_dreadscythe");
+		e.d.l[0].cementerio = { "battle_ox", "celtic_guardian" };
+		e.d.l[1].cementerio = { "dark_magician", "pot_of_greed" };
+		const int a0 = e.d.l[0].m[(size_t)z].atkEf;
+		VERIFICA(usar(e, "reaper_scythe_dreadscythe", { M(0, z) }), "no se equipo");
+		VERIFICA(e.d.l[0].m[(size_t)z].atkEf == a0 + 1500, "ATK %d (esperado %d: 3 monstruos)", e.d.l[0].m[(size_t)z].atkEf, a0 + 1500);
+		fin();
+	}
+	{
+		caso("Zombie Tiger: se equipa a Decayed Commander (+500 ATK/DEF)", "zombie_tiger");
+		Escena e;
+		const int c = e.mon(0, "decayed_commander");
+		const int t = e.mon(0, "zombie_tiger");
+		const int a0 = e.d.l[0].m[(size_t)c].atkEf;
+		VERIFICA(e.activar(0, M(0, t), { M(0, c) }) || e.activar(0, M(0, t)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)t].vacia() && e.d.l[0].m[(size_t)c].atkEf == a0 + 500, "ATK %d (esperado %d)", e.d.l[0].m[(size_t)c].atkEf, a0 + 500);
+		fin();
+	}
+	{
+		caso("Second Goblin: se equipa a Giant Orc", "second_goblin");
+		Escena e;
+		const int c = e.mon(0, "giant_orc");
+		const int t = e.mon(0, "second_goblin");
+		VERIFICA(e.activar(0, M(0, t), { M(0, c) }) || e.activar(0, M(0, t)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)t].vacia() && e.d.l[0].monstruos() == 1, "no se equipo");
+		fin();
+	}
+	{
+		caso("Koitsu: se equipa a Aitsu (+3000 ATK)", "koitsu");
+		Escena e;
+		const int c = e.mon(0, "aitsu");
+		const int t = e.mon(0, "koitsu");
+		const int a0 = e.d.l[0].m[(size_t)c].atkEf;
+		VERIFICA(e.activar(0, M(0, t), { M(0, c) }) || e.activar(0, M(0, t)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)t].vacia() && e.d.l[0].m[(size_t)c].atkEf == a0 + 3000, "ATK %d (esperado %d)", e.d.l[0].m[(size_t)c].atkEf, a0 + 3000);
+		fin();
+	}
+	{
+		caso("Z-Metal Tank: se equipa a X-Head Cannon (+600 ATK/DEF)", "z_metal_tank");
+		Escena e;
+		const int c = e.mon(0, "x_head_cannon");
+		const int t = e.mon(0, "z_metal_tank");
+		const int a0 = e.d.l[0].m[(size_t)c].atkEf;
+		VERIFICA(e.activar(0, M(0, t), { M(0, c) }) || e.activar(0, M(0, t)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)t].vacia() && e.d.l[0].m[(size_t)c].atkEf == a0 + 600, "ATK %d (esperado %d)", e.d.l[0].m[(size_t)c].atkEf, a0 + 600);
+		fin();
+	}
+	{
+		caso("Inaba White Rabbit: ataca directo; vuelve a la mano en la fase final del turno en que se invoco", "inaba_white_rabbit");
+		Escena e;
+		const int k = e.mano(0, "inaba_white_rabbit");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		e.pasarTodo();
+		const int z = buscarZona(e, 0, "inaba_white_rabbit");
+		e.mon(1, "battle_ox");
+		e.d.l[0].m[(size_t)z].llegoEsteTurno = false;
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		e.pasarTodo();
+		VERIFICA(atacar(e, z, -1), "no ataco directo");
+		e.pasarTodo();
+		pasarFases(e, 1);
+		VERIFICA(buscarZona(e, 0, "inaba_white_rabbit") < 0 && std::find(e.d.l[0].mano.begin(), e.d.l[0].mano.end(), "inaba_white_rabbit") != e.d.l[0].mano.end(),
+		         "no volvio a la mano");
+		fin();
+	}
+	{
+		caso("Susa Soldier: su danno de batalla es la mitad", "susa_soldier");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "susa_soldier");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - e.d.atk("susa_soldier") / 2, "LP rival %d (esperado %d)", e.d.l[1].lp, LP_INICIAL - e.d.atk("susa_soldier") / 2);
+		fin();
+	}
+	// ---- lote 10 del probador: monstruos con procedimiento de invocacion, sustitutos de fusion y continuos
+	{
+		struct Proc { const char* id; std::vector<std::string> cem; int destierra; };
+		const Proc procs[] = {
+			{ "dark_necrofear", { "summoned_skull", "terra_the_terrible", "giant_orc" }, 3 },
+			{ "fenrir", { "turtle_tiger", "aqua_madoor" }, 2 },
+			{ "gigantes", { "battle_ox" }, 1 },
+			{ "inferno", { "fireyarou" }, 1 },
+			{ "silpheed", { "baby_dragon" }, 1 },
+			{ "soul_of_purity_and_light", { "mystical_elf", "shining_friendship" }, 2 },
+			{ "spirit_of_flames", { "fireyarou" }, 1 },
+			{ "the_rock_spirit", { "battle_ox" }, 1 },
+		};
+		for (const Proc& p : procs) {
+			caso("Invocacion especial por su procedimiento: destierra del cementerio lo que pide su texto", p.id);
+			Escena e;
+			e.d.l[0].cementerio = p.cem;
+			const int k = e.mano(0, p.id);
+			VERIFICA(e.activar(0, H(0, k)), "%s no se pudo invocar por su procedimiento (motivo '%s')", p.id, motivoNoActivar(e.d, 0, H(0, k), false).c_str());
+			e.pasarTodo();
+			VERIFICA(buscarZona(e, 0, p.id) >= 0 && (int)e.d.l[0].desterrados.size() == p.destierra, "%s: en el campo %d, desterrados %d (esperado %d)", p.id,
+			         buscarZona(e, 0, p.id), (int)e.d.l[0].desterrados.size(), p.destierra);
+			fin();
+		}
+	}
+	for (const char* id : { "goddess_with_the_third_eye", "king_of_the_swamp", "beastking_of_the_swamps", "the_earth_hex_sealed_fusion", "the_light_hex_sealed_fusion" }) {
+		caso("Sustituto de fusion: Masaki + este = Flame Swordsman", id);
+		Escena e;
+		e.d.l[0].extra = { "flame_swordsman" };
+		const int p = e.mano(0, "polymerization");
+		e.mano(0, id);
+		e.mano(0, "masaki_the_legendary_swordsman");
+		Jugada j;
+		j.tipo = J_FUSION;
+		j.mano = p;
+		j.carta = "flame_swordsman";
+		j.manoExtra = { 1, 2 };
+		VERIFICA(e.d.aplicar(j), "%s no sirvio de sustituto", id);
+		fin();
+	}
+	{
+		caso("Pumpking: +100 ATK/DEF con Castle of Dark Illusions en el campo", "pumpking_the_king_of_ghosts");
+		Escena e;
+		const int z = e.mon(0, "pumpking_the_king_of_ghosts");
+		e.mon(0, "castle_of_dark_illusions");
+		e.d.recalcular();
+		VERIFICA(e.d.l[0].m[(size_t)z].atkEf >= 1900, "ATK %d (esperado 1900 o mas)", e.d.l[0].m[(size_t)z].atkEf);
+		fin();
+	}
+	{
+		caso("Lost Guardian: su DEF es 700 por cada Roca propia desterrada", "lost_guardian");
+		Escena e;
+		e.d.l[0].desterrados = { "giant_soldier_of_stone", "the_statue_of_easter_island", "battle_ox" };
+		const int z = e.mon(0, "lost_guardian");
+		e.d.recalcular();
+		VERIFICA(e.d.l[0].m[(size_t)z].defEf == 1400, "DEF %d (esperado 1400)", e.d.l[0].m[(size_t)z].defEf);
+		fin();
+	}
+	{
+		caso("Infernalqueen Archfiend: su controlador paga 500 en cada fase de espera", "infernalqueen_archfiend");
+		Escena e;
+		e.mon(0, "infernalqueen_archfiend");
+		pasarFases(e, 1);
+		pasarFases(e, 0);
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 500, "LP %d (esperado 7500)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Criosphinx: un monstruo vuelve del campo a la mano: su duenno manda 1 carta de la mano al cementerio", "criosphinx");
+		Escena e;
+		e.mon(0, "criosphinx");
+		const int o = e.mon(1, "battle_ox");
+		e.d.l[1].mano = { "pot_of_greed" };
+		VERIFICA(usarColocada(e, 0, "compulsory_evacuation_device", { M(1, o) }), "no se activo");
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].mano.size() == 1 && e.enCementerio(1, "pot_of_greed") == 1, "mano rival %d (esperado 1: el Battle Ox que volvio)", (int)e.d.l[1].mano.size());
+		fin();
+	}
+	{
+		caso("Despair from the Dark: mandado de la mano al cementerio por un efecto del rival: se invoca", "despair_from_the_dark");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.l[0].mano = { "despair_from_the_dark" };
+		const int k = e.mano(1, "delinquent_duo");
+		VERIFICA(e.activar(1, H(1, k)), "Delinquent Duo no se activo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(buscarZona(e, 0, "despair_from_the_dark") >= 0, "no se invoco");
+		fin();
+	}
+	{
+		caso("Frontier Wiseman: niega una magia que toma a un Guerrero tuyo y la destruye", "frontier_wiseman");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.mon(0, "frontier_wiseman");
+		const int o = e.mon(0, "celtic_guardian");
+		const int k = e.mano(1, "change_of_heart");
+		VERIFICA(e.activar(1, H(1, k), { M(0, o) }), "Change of Heart no se activo");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "celtic_guardian") >= 0, "el rival se llevo al Guerrero");
+		fin();
+	}
+	for (const char* id : { "cannonball_spear_shellfish", "deepsea_warrior", "the_legendary_fisherman" }) {
+		caso("Con Umi boca arriba no le afectan las magias (sobrevive a Raigeki)", id);
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.l[0].campo = MagiaTrampa{ "umi", false };
+		e.d.l[0].campo.uid = e.d.nuevoUid();
+		const int z = e.mon(0, id);
+		const int k = e.mano(1, "raigeki");
+		VERIFICA(e.activar(1, H(1, k)), "Raigeki no se activo");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)z].vacia(), "%s destruido por Raigeki", id);
+		fin();
+	}
+	for (const char* id : { "giant_axe_mummy", "mid_shield_gardna" }) {
+		caso("Una vez por turno se pone boca abajo en defensa", id);
+		Escena e;
+		const int z = e.mon(0, id);
+		VERIFICA(e.activar(0, M(0, z)), "%s no se activo", id);
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)z].bocaAbajo && e.d.l[0].m[(size_t)z].defensa, "%s no quedo boca abajo en defensa", id);
+		fin();
+	}
+	{
+		caso("Charm of Shabti: descartada, este turno tus Gravekeeper's no se destruyen en batalla", "charm_of_shabti");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int g = e.mon(0, "gravekeeper_s_guard");
+		e.d.l[0].mano = { "charm_of_shabti" };
+		const int a = e.mon(1, "dark_magician");
+		VERIFICA(atacar(e, a, g), "no ataco");
+		bool usada = false;
+		for (int q = 0; q < 6 && e.d.ef.preg.tipo != P_NADA; q++) {
+			if (!usada && e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && motivoNoActivar(e.d, 0, H(0, 0), true).empty()) {
+				usada = e.activar(0, H(0, 0));
+				continue;
+			}
+			e.pasarTodo();
+		}
+		VERIFICA(usada && !e.d.l[0].m[(size_t)g].vacia(), "Gravekeeper's Guard %s (Shabti %s)", e.d.l[0].m[(size_t)g].vacia() ? "destruido" : "vivo", usada ? "usada" : "sin usar");
+		fin();
+	}
+	{
+		caso("Skilled White Magician: cada magia que se resuelve le pone 1 contador", "skilled_white_magician");
+		Escena e;
+		const int z = e.mon(0, "skilled_white_magician");
+		VERIFICA(usar(e, "pot_of_greed"), "Pot of Greed no se activo");
+		VERIFICA(e.d.l[0].m[(size_t)z].contadores == 1, "contadores %d (esperado 1)", e.d.l[0].m[(size_t)z].contadores);
+		fin();
+	}
+	{
+		caso("Silent Swordsman LV5: no le afectan las magias del rival (sobrevive a su Raigeki)", "silent_swordsman_lv5");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int z = e.mon(0, "silent_swordsman_lv5");
+		const int o = e.mon(0, "battle_ox");
+		const int k = e.mano(1, "raigeki");
+		VERIFICA(e.activar(1, H(1, k)), "Raigeki no se activo");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)z].vacia() && e.d.l[0].m[(size_t)o].vacia(), "Silent Swordsman %s, Battle Ox %s", e.d.l[0].m[(size_t)z].vacia() ? "destruido" : "vivo",
+		         e.d.l[0].m[(size_t)o].vacia() ? "destruido" : "vivo");
+		fin();
+	}
+	// ---- lote 11 del probador: las que muestran cartas (suceso S_REVELA) y pagos
+	{
+		auto revelas = [](const Escena& e, size_t desde) {
+			int n = 0;
+			for (size_t k = desde; k < e.d.sucesos.size(); k++) n += e.d.sucesos[k].tipo == S_REVELA;
+			return n;
+		};
+		{
+			caso("Ancient Telescope: muestra las 5 de arriba del mazo del rival", "ancient_telescope");
+			Escena e;
+			const size_t s0 = e.d.sucesos.size();
+			VERIFICA(usar(e, "ancient_telescope"), "no se activo");
+			VERIFICA(revelas(e, s0) == 5, "revelo %d (esperado 5)", revelas(e, s0));
+			fin();
+		}
+		{
+			caso("Mind Haxorz: paga 500 y muestra la mano y las colocadas del rival", "mind_haxorz");
+			Escena e;
+			e.d.l[1].mano = { "raigeki", "dark_hole" };
+			e.colocar(1, "mirror_force");
+			const size_t s0 = e.d.sucesos.size();
+			VERIFICA(usarColocada(e, 0, "mind_haxorz"), "no se activo");
+			VERIFICA(e.d.l[0].lp == LP_INICIAL - 500 && revelas(e, s0) == 3, "LP %d, revelo %d (esperado 3)", e.d.l[0].lp, revelas(e, s0));
+			fin();
+		}
+		{
+			caso("The Inexperienced Spy: muestra 1 carta de la mano del rival", "the_inexperienced_spy");
+			Escena e;
+			e.d.l[1].mano = { "raigeki", "dark_hole" };
+			const size_t s0 = e.d.sucesos.size();
+			VERIFICA(usar(e, "the_inexperienced_spy"), "no se activo");
+			VERIFICA(revelas(e, s0) == 1, "revelo %d (esperado 1)", revelas(e, s0));
+			fin();
+		}
+		{
+			caso("Respect Play: las manos a la vista", "respect_play");
+			Escena e;
+			e.d.l[1].mano = { "raigeki", "dark_hole" };
+			const size_t s0 = e.d.sucesos.size();
+			VERIFICA(usarColocada(e, 0, "respect_play"), "no se activo");
+			VERIFICA(revelas(e, s0) >= 2, "revelo %d (esperado 2)", revelas(e, s0));
+			fin();
+		}
+		{
+			caso("Senri Eye: en tu fase de espera paga 100 y mira la de arriba del mazo del rival", "senri_eye");
+			Escena e;
+			mtArriba(e, 0, "senri_eye");
+			pasarFases(e, 1);
+			const size_t s0 = e.d.sucesos.size();
+			pasarFases(e, 0);
+			VERIFICA(e.d.l[0].lp == LP_INICIAL - 100 && revelas(e, s0) == 1, "LP %d (esperado 7900), revelo %d", e.d.l[0].lp, revelas(e, s0));
+			fin();
+		}
+		{
+			caso("Inspection: en la fase de espera del rival paga 500 y mira 1 carta de su mano", "inspection");
+			Escena e;
+			mtArriba(e, 0, "inspection");
+			e.d.l[1].mano = { "raigeki", "dark_hole" };
+			const size_t s0 = e.d.sucesos.size();
+			pasarFases(e, 1);
+			VERIFICA(e.d.l[0].lp == LP_INICIAL - 500 && revelas(e, s0) == 1, "LP %d (esperado 7500), revelo %d", e.d.l[0].lp, revelas(e, s0));
+			fin();
+		}
+		{
+			caso("Patrol Robo: en tu fase de espera mira 1 colocada del rival", "patrol_robo");
+			Escena e;
+			e.mon(0, "patrol_robo");
+			e.colocar(1, "mirror_force");
+			pasarFases(e, 1);
+			const size_t s0 = e.d.sucesos.size();
+			pasarFases(e, 0);
+			resolverDisparos(e);
+			VERIFICA(revelas(e, s0) >= 1, "revelo %d (esperado 1)", revelas(e, s0));
+			fin();
+		}
+	}
+	{
+		caso("Recycle: en tu fase de espera paga 300 y una no-monstruo del cementerio va abajo del mazo", "recycle");
+		Escena e;
+		mtArriba(e, 0, "recycle");
+		e.d.l[0].cementerio = { "dark_hole", "battle_ox" };
+		pasarFases(e, 1);
+		pasarFases(e, 0);
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 300 && e.enCementerio(0, "dark_hole") == 0 && e.d.l[0].mazo.front() == "dark_hole", "LP %d", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Card Shuffle: paga 300 y baraja un mazo", "card_shuffle");
+		Escena e;
+		const int z = mtArriba(e, 0, "card_shuffle");
+		e.d.l[0].mt[(size_t)z].contadores = 1;
+		for (int k = 0; k < 20; k++) e.d.l[1].mazo[(size_t)k] = "c" + std::to_string(k);
+		const auto antes = e.d.l[1].mazo;
+		VERIFICA(e.activar(0, MT(0, z)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 300 && e.d.l[1].mazo != antes, "LP %d", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Life Absorbing Machine: en tu fase de espera, la mitad de los LP que pagaste en tu turno anterior", "life_absorbing_machine");
+		Escena e;
+		mtArriba(e, 0, "life_absorbing_machine");
+		e.d.l[0].cementerio = { "battle_ox" };
+		VERIFICA(usar(e, "premature_burial", { Lugar{ 0, EN_CEMENTERIO, 0 } }), "Premature Burial no se activo");
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 800, "no pago 800 (LP %d)", e.d.l[0].lp);
+		pasarFases(e, 1);
+		pasarFases(e, 0);
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 800 + 400, "LP %d (esperado %d)", e.d.l[0].lp, LP_INICIAL - 400);
+		fin();
+	}
+	{
+		caso("The Law of the Normal: con 5 normales de nivel 2 o menos, descartan las manos y se destruye todo lo demas", "the_law_of_the_normal");
+		Escena e;
+		for (int k = 0; k < 5; k++) e.mon(0, "basic_insect");
+		e.mon(1, "dark_magician");
+		e.colocar(1, "mirror_force");
+		e.mano(1, "pot_of_greed");
+		VERIFICA(usar(e, "the_law_of_the_normal"), "no se activo");
+		VERIFICA(e.d.l[0].monstruos() == 5 && e.d.l[1].monstruos() == 0 && e.d.l[1].libreMT() == 0 && e.d.l[1].mano.empty(), "monstruos %d/%d", e.d.l[0].monstruos(),
+		         e.d.l[1].monstruos());
+		fin();
+	}
+	// ---- lote 12 del probador: continuas y de batalla
+	{
+		caso("After the Struggle: activada en la fase principal 1, en la fase final se destruyen los que combatieron", "after_the_struggle");
+		Escena e;
+		VERIFICA(usar(e, "after_the_struggle"), "no se activo");
+		const int a = e.mon(0, "giant_soldier_of_stone");   // 1300 ATK contra 2000 DEF: nadie se destruye en el combate
+		const int o = e.mon(1, "giant_soldier_of_stone", true);
+		const int q = e.mon(1, "battle_ox");                  // no combate: se queda
+		e.d.fase = F_BATALLA;
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		pasarFases(e, 1);
+		VERIFICA(e.d.l[0].m[(size_t)a].vacia() && e.d.l[1].m[(size_t)o].vacia() && !e.d.l[1].m[(size_t)q].vacia(), "quedaron los que combatieron");
+		fin();
+	}
+	{
+		caso("Dust Barrier: los normales boca arriba no reciben las magias del rival (sobreviven a su Raigeki)", "dust_barrier");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		mtArriba(e, 0, "dust_barrier");
+		const int n = e.mon(0, "battle_ox");
+		const int f = e.mon(0, "man_eater_bug");
+		const int k = e.mano(1, "raigeki");
+		VERIFICA(e.activar(1, H(1, k)), "Raigeki no se activo");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)n].vacia() && e.d.l[0].m[(size_t)f].vacia(), "Battle Ox %s, Man-Eater %s", e.d.l[0].m[(size_t)n].vacia() ? "destruido" : "vivo",
+		         e.d.l[0].m[(size_t)f].vacia() ? "destruido" : "vivo");
+		fin();
+	}
+	{
+		caso("Heart of the Underdog: en tu fase de robo, si robas un normal, robas otra", "heart_of_the_underdog");
+		Escena e;
+		mtArriba(e, 0, "heart_of_the_underdog");
+		e.d.l[0].mazo.push_back("pot_of_greed");
+		e.d.l[0].mazo.push_back("battle_ox");   // (la de arriba: un normal)
+		pasarFases(e, 1);
+		const size_t m0 = e.d.l[0].mano.size();
+		pasarFases(e, 0);
+		resolverDisparos(e);
+		VERIFICA(e.d.l[0].mano.size() == m0 + 2, "mano +%d (esperado 2)", (int)(e.d.l[0].mano.size() - m0));
+		fin();
+	}
+	{
+		// (en el motor el efecto se usa activandola despues de que se destruye el Hada, no es automatico)
+		caso("Mokey Mokey Smackdown: destruido un Hada tuyo, tus Mokey Mokey pasan a 3000", "mokey_mokey_smackdown");
+		// (rama classic-motor2: es continua y automatica: boca arriba, al destruirse el Hada los Mokey Mokey pasan a 3000)
+		Escena e(F_BATALLA);
+		const int sm = e.colocar(0, "mokey_mokey_smackdown");
+		const int mk = e.mon(0, "mokey_mokey");
+		const int h = e.mon(0, "shining_friendship");   // Hada 1300
+		e.d.fase = F_PRINCIPAL1;
+		VERIFICA(e.activar(0, MT(0, sm)), "no se activo (motivo '%s')", motivoNoActivar(e.d, 0, MT(0, sm), false).c_str());
+		e.pasarTodo();
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.fase = F_BATALLA;
+		const int a = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, h), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)h].vacia() && e.d.l[0].m[(size_t)mk].atkEf == 3000, "Mokey Mokey ATK %d (esperado 3000)", e.d.l[0].m[(size_t)mk].atkEf);
+		pasarFases(e, 0);
+		VERIFICA(e.d.l[0].m[(size_t)mk].atkEf == 300, "el 3000 no se fue al terminar el turno (ATK %d)", e.d.l[0].m[(size_t)mk].atkEf);
+		fin();
+	}
+	{
+		caso("Super Rejuvenation: en la fase final roba tantas como Dragones descartaste o sacrificaste este turno", "super_rejuvenation");
+		Escena e;
+		e.mon(0, "baby_dragon");
+		const int k = e.mano(0, "summoned_skull");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { 0 };
+		VERIFICA(e.d.aplicar(j), "no invoco con Baby Dragon de sacrificio");
+		e.pasarTodo();
+		VERIFICA(usar(e, "super_rejuvenation"), "no se activo");
+		const size_t m0 = e.d.l[0].mano.size();
+		Jugada f;
+		f.tipo = J_FASE;
+		for (int g = 0; g < 6 && e.d.activo == 0 && e.d.fase != F_FINAL; g++) {
+			e.d.aplicar(f);
+			e.pasarTodo();
+		}
+		pasarFases(e, 1);
+		VERIFICA(e.d.l[0].mano.size() == m0 + 1, "mano +%d (esperado 1)", (int)(e.d.l[0].mano.size() - m0));
+		fin();
+	}
+	{
+		caso("Toon Defense: atacan a tu Toon de nivel 4 o menos: el ataque pasa a ser directo", "toon_defense");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		mtArriba(e, 0, "toon_world");
+		const int t = e.mon(0, "toon_mermaid");
+		const int td = e.colocar(0, "toon_defense");
+		const int a = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, t), "no ataco");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, td)), "Toon Defense no respondio");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)t].vacia() && e.d.l[0].lp == LP_INICIAL - 1700, "Toon %s, LP %d (esperado 6300)", e.d.l[0].m[(size_t)t].vacia() ? "destruido" : "vivo",
+		         e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("The Dragon's Bead: descarta 1 y niega una trampa que toma a un Dragon tuyo boca arriba; se queda y se vuelve a usar", "the_dragon_s_bead");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int db = e.colocar(0, "the_dragon_s_bead");
+		e.mano(0, "celtic_guardian");
+		e.mano(0, "mystical_elf");
+		const int dz = e.mon(0, "blue_eyes");
+		const int ce = e.colocar(1, "compulsory_evacuation_device");
+		VERIFICA(e.activar(1, MT(1, ce), { M(0, dz) }), "la trampa del rival no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, db), {}, { 0 }), "Dragon's Bead no respondio");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "blue_eyes") >= 0 && e.enCementerio(1, "compulsory_evacuation_device") == 1, "Blue-Eyes volvio a la mano");
+		VERIFICA(e.d.l[0].tieneBocaArriba("the_dragon_s_bead"), "no se quedo en el campo (es continua)");
+		const int ce2 = e.colocar(1, "compulsory_evacuation_device");
+		VERIFICA(e.activar(1, MT(1, ce2), { M(0, dz) }), "la segunda trampa no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, db), {}, { 0 }), "Dragon's Bead no se volvio a usar");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "blue_eyes") >= 0, "Blue-Eyes volvio a la mano la segunda vez");
+		fin();
+	}
+	{
+		caso("Pyro Clock of Destiny: adelanta un turno los contadores (Swords of Revealing Light se va antes)", "pyro_clock_of_destiny");
+		Escena e;
+		const int s = mtArriba(e, 0, "swords_of_revealing_light");
+		const int c0 = e.d.l[0].mt[(size_t)s].contadores;
+		VERIFICA(usarColocada(e, 0, "pyro_clock_of_destiny"), "no se activo");
+		VERIFICA(e.d.l[0].mt[(size_t)s].contadores == c0 + 1, "contador %d (esperado %d)", e.d.l[0].mt[(size_t)s].contadores, c0 + 1);
+		fin();
+	}
+	{
+		caso("Major Riot: el rival devuelve uno tuyo a la mano: todos los monstruos vuelven a la mano y cada uno invoca de nivel 4 o menos", "major_riot");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o = e.mon(0, "battle_ox");
+		e.mon(0, "celtic_guardian");
+		e.mon(1, "dark_magician");
+		const int mr = e.colocar(0, "major_riot");
+		const int ce = e.colocar(1, "compulsory_evacuation_device");
+		VERIFICA(e.activar(1, MT(1, ce), { M(0, o) }), "Compulsory no se activo");
+		e.pasarTodo();
+		Jugada f;
+		f.tipo = J_FASE;
+		for (int g = 0; g < 8 && !(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0) && e.d.activo == 1; g++)
+			if (!e.d.aplicar(f)) e.pasarTodo();
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, mr)), "Major Riot no se pudo activar");
+		e.pasarTodo();
+		// (vuelven Celtic y Dark Magician; tu invocas 1 de nivel 4 o menos; el rival no tiene de nivel 4 o menos)
+		VERIFICA(e.d.l[0].monstruos() == 1 && e.d.l[1].monstruos() == 0 &&
+		         std::find(e.d.l[1].mano.begin(), e.d.l[1].mano.end(), "dark_magician") != e.d.l[1].mano.end(), "monstruos %d/%d", e.d.l[0].monstruos(), e.d.l[1].monstruos());
+		fin();
+	}
+	// ---- lote 13 del probador
+	{
+		caso("Ancient Gear Soldier / Beast: si ataca, el rival no activa magias ni trampas hasta el final del paso de danno", "ancient_gear_soldier");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "ancient_gear_soldier");
+		const int mf = e.colocar(1, "mirror_force");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		VERIFICA(motivoNoActivar(e.d, 1, MT(1, mf), true) != "", "el rival puede activar Mirror Force");
+		e.pasarTodo();
+		fin();
+	}
+	{
+		caso("Ancient Gear Beast: si ataca, el rival no activa magias ni trampas", "ancient_gear_beast");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "ancient_gear_beast");
+		const int mf = e.colocar(1, "mirror_force");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		VERIFICA(motivoNoActivar(e.d, 1, MT(1, mf), true) != "", "el rival puede activar Mirror Force");
+		e.pasarTodo();
+		fin();
+	}
+	{
+		caso("Ninjitsu Art of Decoy: mientras siga boca arriba, el Ninja elegido no se destruye en batalla", "ninjitsu_art_of_decoy");
+		Escena e;
+		const int n = e.mon(0, "ninja_grandmaster_sasuke");
+		VERIFICA(usarColocada(e, 0, "ninjitsu_art_of_decoy", { M(0, n) }), "no se activo");
+		VERIFICA(e.d.l[0].tieneBocaArriba("ninjitsu_art_of_decoy"), "no se quedo en el campo (es continua)");
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.fase = F_BATALLA;
+		const int a = e.mon(1, "blue_eyes");
+		VERIFICA(atacar(e, a, n), "no ataco");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)n].vacia(), "el Ninja se destruyo en batalla");
+		fin();
+	}
+	{
+		caso("Spiral Spear Strike: Gaia ataca a uno en defensa: perfora", "spiral_spear_strike");
+		Escena e(F_BATALLA);
+		mtArriba(e, 0, "spiral_spear_strike");
+		const int a = e.mon(0, "gaia");
+		const int o = e.mon(1, "celtic_guardian", true);
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - (e.d.atk("gaia") - 1200), "LP rival %d (esperado %d)", e.d.l[1].lp, LP_INICIAL - (e.d.atk("gaia") - 1200));
+		fin();
+	}
+	{
+		caso("Swift Gaia the Fierce Knight: sin sacrificios si es la unica carta de la mano; Spiral Spear Strike lo hace perforar",
+		     "swift_gaia_the_fierce_knight");
+		Escena e;
+		e.mano(0, "swift_gaia_the_fierce_knight");
+		const int k2 = e.mano(0, "kuriboh");
+		(void)k2;
+		VERIFICA(!invocar(e, 0), "se invoco sin sacrificios con otra carta en la mano");
+		e.d.l[0].mano.pop_back();
+		VERIFICA(invocar(e, 0) && buscarZona(e, 0, "swift_gaia_the_fierce_knight") >= 0, "no se invoco siendo la unica de la mano");
+		Escena f(F_BATALLA);
+		mtArriba(f, 0, "spiral_spear_strike");
+		const int a = f.mon(0, "swift_gaia_the_fierce_knight");
+		const int o = f.mon(1, "celtic_guardian", true);
+		VERIFICA(atacar(f, a, o), "no ataco");
+		f.pasarTodo();
+		VERIFICA(f.d.l[1].lp == LP_INICIAL - (2300 - 1200), "LP rival %d (sin perforar)", f.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Amphibious Bugroth: receta con Sentinel of the Seas (antes Defender of the Sea) y Polymerization", "amphibious_bugroth");
+		probadas["sentinel_of_the_seas"]++;
+		const auto it = base.fusiones.find("amphibious_bugroth");
+		VERIFICA(it != base.fusiones.end() && std::find(it->second.begin(), it->second.end(), "sentinel_of_the_seas") != it->second.end() &&
+		             std::find(it->second.begin(), it->second.end(), "ground_attacker_bugroth") != it->second.end(),
+		         "sin receta con Sentinel of the Seas");
+		Escena e;
+		e.d.l[0].extra = { "amphibious_bugroth" };
+		const int p = e.mano(0, "polymerization");
+		const int a = e.mano(0, "ground_attacker_bugroth");
+		const int s = e.mano(0, "sentinel_of_the_seas");
+		Jugada j;
+		j.tipo = J_FUSION;
+		j.mano = p;
+		j.carta = "amphibious_bugroth";
+		j.manoExtra = { a, s };
+		VERIFICA(e.d.aplicar(j) && buscarZona(e, 0, "amphibious_bugroth") >= 0, "no fusiono");
+		fin();
+	}
+	{
+		caso("Talisman of Spell Sealing: con Sealmaster Meisei, nadie activa magias", "talisman_of_spell_sealing");
+		Escena e;
+		e.mon(0, "sealmaster_meisei");
+		VERIFICA(usarColocada(e, 0, "talisman_of_spell_sealing"), "no se activo");
+		const int k = e.mano(1, "pot_of_greed");
+		e.d.activo = 1;
+		VERIFICA(motivoNoActivar(e.d, 1, H(1, k), false) != "", "el rival puede activar Pot of Greed");
+		fin();
+	}
+	{
+		caso("Taunt: en la fase principal 1 del rival, elige uno tuyo: si ataca, tiene que atacarlo", "taunt");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int o1 = e.mon(0, "celtic_guardian");
+		const int o2 = e.mon(0, "giant_soldier_of_stone", true);
+		const int a = e.mon(1, "dark_magician");
+		const int tz = e.colocar(0, "taunt");
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);   // (a la batalla: ventana)
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, tz), { M(0, o2) }), "Taunt no se pudo activar");
+		e.pasarTodo();
+		VERIFICA(!atacar(e, a, o1), "Dark Magician pudo atacar a otro que el elegido");
+		fin();
+	}
+	{
+		caso("Steel Scorpion: el que no es Maquina y lo ataca se destruye en la fase final del 2o turno del rival despues del ataque", "steel_scorpion");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int s = e.mon(0, "steel_scorpion", true);
+		const int a = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, s), "no ataco");
+		e.pasarTodo();
+		pasarFases(e, 0);   // turno 5 (tuyo)
+		pasarFases(e, 1);   // turno 6 (1er turno del rival despues del ataque)
+		pasarFases(e, 0);   // turno 7
+		VERIFICA(!e.d.l[1].m[(size_t)a].vacia(), "se destruyo antes de tiempo (turno %d)", e.d.turno);
+		pasarFases(e, 1);   // turno 8 (2o turno del rival)
+		pasarFases(e, 0);   // (su fase final)
+		VERIFICA(e.d.l[1].m[(size_t)a].vacia(), "Battle Ox no se destruyo en la fase final del 2o turno del rival");
+		fin();
+	}
+	{
+		caso("The Agent of Force - Mars: no le afectan las magias (sobrevive a Raigeki del rival)", "the_agent_of_force_mars");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int z = e.mon(0, "the_agent_of_force_mars");
+		const int k = e.mano(1, "raigeki");
+		VERIFICA(e.activar(1, H(1, k)), "Raigeki no se activo");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)z].vacia(), "Mars destruido por Raigeki");
+		fin();
+	}
+	{
+		caso("Grave Ohja: con un boca abajo tuyo en defensa no se lo puede atacar", "grave_ohja");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int g = e.mon(0, "grave_ohja");
+		e.mon(0, "celtic_guardian", true, true);
+		const int a = e.mon(1, "dark_magician");
+		VERIFICA(!atacar(e, a, g), "se ataco a Grave Ohja");
+		fin();
+	}
+	{
+		caso("Valkyrion the Magna Warrior: se invoca sacrificando a Alpha, Beta y Gamma", "valkyrion_the_magna_warrior");
+		Escena e;
+		e.mon(0, "alpha_the_magnet_warrior");
+		e.mon(0, "beta_the_magnet_warrior");
+		e.mon(0, "gamma_the_magnet_warrior");
+		const int k = e.mano(0, "valkyrion_the_magna_warrior");
+		VERIFICA(e.activar(0, H(0, k)), "no se pudo invocar (motivo '%s')", motivoNoActivar(e.d, 0, H(0, k), false).c_str());
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "valkyrion_the_magna_warrior") >= 0 && e.d.l[0].monstruos() == 1, "monstruos %d", e.d.l[0].monstruos());
+		fin();
+	}
+	{
+		caso("Theinen the Great Sphinx: destruidas a la vez Andro Sphinx y Sphinx Teleia, paga 500 y se invoca", "theinen_the_great_sphinx");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.mon(0, "andro_sphinx");
+		e.mon(0, "sphinx_teleia");
+		e.mano(0, "theinen_the_great_sphinx");
+		const int k = e.mano(1, "raigeki");
+		VERIFICA(e.activar(1, H(1, k)), "Raigeki no se activo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(buscarZona(e, 0, "theinen_the_great_sphinx") >= 0 && e.d.l[0].lp <= LP_INICIAL - 500, "no llego (LP %d)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Vampire Genesis: se invoca desterrando a Vampire Lord", "vampire_genesis");
+		Escena e;
+		e.mon(0, "vampire_lord");
+		const int k = e.mano(0, "vampire_genesis");
+		VERIFICA(e.activar(0, H(0, k)), "no se pudo invocar (motivo '%s')", motivoNoActivar(e.d, 0, H(0, k), false).c_str());
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "vampire_genesis") >= 0 && e.d.l[0].desterrados.size() == 1, "no llego o no desterro");
+		fin();
+	}
+	{
+		caso("Master Monk: se invoca sacrificando a Monk Fighter; ataca dos veces", "master_monk");
+		Escena e;
+		e.mon(0, "monk_fighter");
+		const int k = e.mano(0, "master_monk");
+		VERIFICA(e.activar(0, H(0, k)), "no se pudo invocar (motivo '%s')", motivoNoActivar(e.d, 0, H(0, k), false).c_str());
+		e.pasarTodo();
+		const int z = buscarZona(e, 0, "master_monk");
+		VERIFICA(z >= 0, "no llego");
+		if (z >= 0) {
+			e.d.l[0].m[(size_t)z].llegoEsteTurno = false;
+			e.d.fase = F_BATALLA;
+			VERIFICA(atacar(e, z, -1), "primer ataque");
+			e.pasarTodo();
+			VERIFICA(atacar(e, z, -1), "segundo ataque");
+			e.pasarTodo();
+		}
+		fin();
+	}
+	// ---- lote 14 del probador
+	{
+		caso("Hyena: destruida en batalla, invoca las Hyena del mazo", "hyena");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.l[0].mazo.push_back("hyena");
+		e.d.l[0].mazo.push_back("hyena");
+		const int h = e.mon(0, "hyena");
+		const int a = e.mon(1, "dark_magician");
+		VERIFICA(atacar(e, a, h), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		int n = 0;
+		for (const Monstruo& m : e.d.l[0].m) n += m.id == "hyena";
+		VERIFICA(n == 2, "Hyenas en el campo %d (esperado 2)", n);
+		fin();
+	}
+	{
+		caso("Penalty Game!: con 4 cartas en la mano del rival, eliges: se salta su proxima fase de robo", "penalty_game");
+		Escena e;
+		e.d.l[1].mano = { "a", "b", "c", "d" };
+		const int pg = e.colocar(0, "penalty_game");
+		VERIFICA(e.activar(0, MT(0, pg)), "no se activo");
+		e.pasa(1);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 0, "no pregunto cual efecto");
+		Jugada no;
+		no.tipo = J_PASAR;   // ("No": el primer efecto, sin robo)
+		e.d.aplicar(no);
+		e.pasarTodo();
+		pasarFases(e, 1);
+		VERIFICA(e.d.l[1].mano.size() == 4, "el rival robo (mano %d)", (int)e.d.l[1].mano.size());
+		fin();
+	}
+	{
+		caso("Penalty Game!: el segundo efecto: el rival no activa magias ni trampas este turno", "penalty_game");
+		Escena e;
+		e.d.l[1].mano = { "battle_ox", "b", "c", "dark_hole" };
+		e.mon(0, "celtic_guardian");
+		const int pg = e.colocar(0, "penalty_game");
+		const int mf = e.colocar(1, "mystical_space_typhoon");
+		VERIFICA(e.activar(0, MT(0, pg)), "no se activo");
+		e.pasa(1);
+		VERIFICA(e.elige(0, 0), "no pregunto cual efecto");
+		e.pasarTodo();
+		VERIFICA(motivoNoActivar(e.d, 1, MT(1, mf), true) != "", "el rival puede activar magias/trampas");
+		fin();
+	}
+	{
+		caso("Impenetrable Formation: con 2+ monstruos tuyos, todos en defensa, el elegido +700 DEF", "impenetrable_formation");
+		Escena e;
+		const int a = e.mon(0, "celtic_guardian", true);
+		e.mon(0, "battle_ox", true);
+		const int d0 = e.d.l[0].m[(size_t)a].defEf;
+		VERIFICA(usar(e, "impenetrable_formation", { M(0, a) }), "no se activo");
+		VERIFICA(e.d.l[0].m[(size_t)a].defEf == d0 + 700, "DEF %d (esperado %d)", e.d.l[0].m[(size_t)a].defEf, d0 + 700);
+		fin();
+	}
+	{
+		caso("Kaminote Blow: el que combate con Monk Fighter se destruye al final del paso de danno", "kaminote_blow");
+		Escena e;
+		const int mf = e.mon(0, "monk_fighter");
+		VERIFICA(usar(e, "kaminote_blow"), "no se activo");
+		e.d.fase = F_BATALLA;
+		const int o = e.mon(1, "giant_soldier_of_stone", true);   // 2000 DEF: Monk no lo destruye
+		VERIFICA(atacar(e, mf, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)o].vacia(), "el que combatio siguio");
+		fin();
+	}
+	{
+		caso("Legendary Black Belt: el equipado destruye uno en batalla: danno igual a su DEF", "legendary_black_belt");
+		Escena e;
+		const int mf = e.mon(0, "monk_fighter");
+		VERIFICA(usar(e, "legendary_black_belt", { M(0, mf) }), "no se equipo");
+		e.d.fase = F_BATALLA;
+		const int o = e.mon(1, "mokey_mokey");   // 300/100
+		VERIFICA(atacar(e, mf, o), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].m[(size_t)o].vacia() && e.d.l[1].lp == LP_INICIAL - (e.d.atk("monk_fighter") - 300) - 100, "LP rival %d", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Cyclon Laser: a Gradius +300 y perfora", "cyclon_laser");
+		Escena e;
+		const int g = e.mon(0, "gradius");
+		const int a0 = e.d.l[0].m[(size_t)g].atkEf;
+		VERIFICA(usar(e, "cyclon_laser", { M(0, g) }), "no se equipo");
+		VERIFICA(e.d.l[0].m[(size_t)g].atkEf == a0 + 300, "ATK %d", e.d.l[0].m[(size_t)g].atkEf);
+		e.d.fase = F_BATALLA;
+		const int o = e.mon(1, "mokey_mokey", true);   // 100 DEF
+		VERIFICA(atacar(e, g, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - (a0 + 300 - 100), "LP rival %d (esperado %d)", e.d.l[1].lp, LP_INICIAL - (a0 + 200));
+		fin();
+	}
+	{
+		caso("Gather Your Mind: trae otra Gather Your Mind del mazo", "gather_your_mind");
+		Escena e;
+		e.d.l[0].mazo.push_back("gather_your_mind");
+		VERIFICA(usar(e, "gather_your_mind"), "no se activo");
+		VERIFICA(std::find(e.d.l[0].mano.begin(), e.d.l[0].mano.end(), "gather_your_mind") != e.d.l[0].mano.end(), "no la trajo");
+		fin();
+	}
+	{
+		caso("Grave Lure: la de arriba del mazo del rival queda marcada: cuando la roba, va al cementerio", "grave_lure");
+		Escena e;
+		for (auto& c : e.d.l[1].mazo) c = "celtic_guardian";
+		e.d.l[1].mazo.back() = "pot_of_greed";
+		VERIFICA(usarColocada(e, 0, "grave_lure"), "no se activo");
+		e.d.l[1].mazo = { "pot_of_greed" };   // (la marcada, para que la robe ya)
+		pasarFases(e, 1);
+		VERIFICA(e.enCementerio(1, "pot_of_greed") == 1, "la robada marcada no fue al cementerio");
+		fin();
+	}
+	{
+		caso("Human Wave Tactics: en la fase final, por cada normal de nivel 2 o menos tuyo destruido en batalla, otro del mazo", "human_wave_tactics");
+		Escena e(F_BATALLA);
+		mtArriba(e, 0, "human_wave_tactics");
+		e.d.l[0].mazo.push_back("basic_insect");
+		const int b = e.mon(0, "basic_insect");   // nivel 2, 500
+		const int o = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, b, o), "no ataco");
+		e.pasarTodo();
+		pasarFases(e, 1);
+		VERIFICA(buscarZona(e, 0, "basic_insect") >= 0, "no llego otro Basic Insect");
+		fin();
+	}
+	{
+		caso("Weather Report: al voltearse destruye las Swords of Revealing Light del rival", "weather_report");
+		Escena e;
+		mtArriba(e, 1, "swords_of_revealing_light");
+		const int z = e.mon(0, "weather_report", true, true);
+		VERIFICA(voltear(e, z), "no se volteo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(!e.d.l[1].tieneBocaArriba("swords_of_revealing_light"), "Swords siguio");
+		fin();
+	}
+	{
+		caso("The Secret of the Bandit: el elegido hace danno de batalla: el rival descarta 1 al azar", "the_secret_of_the_bandit");
+		Escena e;
+		const int a = e.mon(0, "battle_ox");
+		e.d.l[1].mano = { "pot_of_greed" };
+		VERIFICA(usar(e, "the_secret_of_the_bandit", { M(0, a) }), "no se activo");
+		e.d.fase = F_BATALLA;
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].mano.empty(), "el rival no descarto");
+		fin();
+	}
+	{
+		caso("Amazoness Chain Master: destruida en batalla, paga 1500 y toma un monstruo de la mano del rival", "amazoness_chain_master");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int c = e.mon(0, "amazoness_chain_master");
+		e.d.l[1].mano = { "dark_magician", "pot_of_greed" };
+		const int a = e.mon(1, "blue_eyes");
+		VERIFICA(atacar(e, a, c), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(std::find(e.d.l[0].mano.begin(), e.d.l[0].mano.end(), "dark_magician") != e.d.l[0].mano.end() && e.d.l[1].mano.size() == 1,
+		         "no tomo el monstruo (mano rival %d)", (int)e.d.l[1].mano.size());
+		fin();
+	}
+	{
+		caso("Sorcerer of Dark Magic: se invoca sacrificando 2 Lanzadores de Conjuros de nivel 6 o mas", "sorcerer_of_dark_magic");
+		Escena e;
+		e.mon(0, "dark_magician");
+		e.mon(0, "dark_magician");
+		const int k = e.mano(0, "sorcerer_of_dark_magic");
+		VERIFICA(e.activar(0, H(0, k)), "no se pudo invocar (motivo '%s')", motivoNoActivar(e.d, 0, H(0, k), false).c_str());
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "sorcerer_of_dark_magic") >= 0 && e.d.l[0].monstruos() == 1, "monstruos %d", e.d.l[0].monstruos());
+		fin();
+	}
+	// ---- lote 15 del probador
+	{
+		caso("Labyrinth of Nightmare: en cada fase final, los boca arriba del jugador del turno cambian de posicion", "labyrinth_of_nightmare");
+		Escena e;
+		mtArriba(e, 0, "labyrinth_of_nightmare");
+		const int z = e.mon(0, "battle_ox");
+		const int r = e.mon(1, "celtic_guardian");
+		pasarFases(e, 1);
+		VERIFICA(e.d.l[0].m[(size_t)z].defensa && !e.d.l[1].m[(size_t)r].defensa, "tras tu fase final: Battle Ox %s, Celtic %s", e.d.l[0].m[(size_t)z].defensa ? "defensa" : "ataque",
+		         e.d.l[1].m[(size_t)r].defensa ? "defensa" : "ataque");
+		fin();
+	}
+	{
+		caso("Judgment of the Desert: los que se voltean despues no cambian de posicion", "judgment_of_the_desert");
+		Escena e;
+		VERIFICA(usarColocada(e, 0, "judgment_of_the_desert"), "no se activo");
+		const int z = e.mon(0, "celtic_guardian", true, true);
+		VERIFICA(voltear(e, z), "no se volteo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(motorPosicionFija(e.d, 0, z), "el volteado puede cambiar de posicion");
+		fin();
+	}
+	{
+		caso("Mystic Swordsman LV6: ataca a uno boca abajo en defensa: lo destruye al empezar el paso de danno", "mystic_swordsman_lv6");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "mystic_swordsman_lv6");
+		const int o = e.mon(1, "giant_soldier_of_stone", true, true);
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)o].vacia(), "el boca abajo siguio");
+		fin();
+	}
+	{
+		caso("Dark Coffin: destruida boca abajo, el rival descarta 1 al azar (o destruye un monstruo suyo)", "dark_coffin");
+		Escena e;
+		const int dc = e.colocar(0, "dark_coffin");
+		e.d.l[1].mano = { "pot_of_greed" };
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int k = e.mano(1, "mystical_space_typhoon");
+		VERIFICA(e.activar(1, H(1, k), { MT(0, dc) }), "MST no se activo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].mano.empty() && e.enCementerio(1, "pot_of_greed") == 1, "el rival no descarto (mano %d)", (int)e.d.l[1].mano.size());
+		fin();
+	}
+	{
+		caso("Red-Eyes Black Metal Dragon: Metalmorph a Red-Eyes: se sacrifica y llega del mazo", "red_eyes_black_metal_dragon");
+		Escena e;
+		const int r = e.mon(0, "red_eyes");
+		e.d.l[0].mazo.push_back("red_eyes_black_metal_dragon");
+		const int mm = e.colocar(0, "metalmorph");
+		VERIFICA(e.activar(0, MT(0, mm), { M(0, r) }), "Metalmorph no se activo");
+		e.pasarTodo();
+		const int z2 = [&] {
+			for (int i = 0; i < ZONAS; i++)
+				if (e.d.l[0].mt[(size_t)i].id == "metalmorph") return i;
+			return -1;
+		}();
+		VERIFICA(z2 >= 0 && e.d.l[0].mt[(size_t)z2].eqUid != 0, "Metalmorph no quedo equipada");
+		std::string motivo = z2 >= 0 ? motivoNoActivar(e.d, 0, MT(0, z2), false) : "?";
+		if (z2 >= 0 && buscarZona(e, 0, "red_eyes_black_metal_dragon") < 0) {   // (segundo uso: sacrificar al equipado)
+			// (en el motor el segundo uso pide un objetivo, como la activacion de equipo: el mismo equipado)
+			VERIFICA(e.activar(0, MT(0, z2), { M(0, r) }), "el segundo uso no se activo");
+			e.pasarTodo();
+		}
+		VERIFICA(buscarZona(e, 0, "red_eyes_black_metal_dragon") >= 0, "no llego Red-Eyes Black Metal Dragon (motivo del segundo uso '%s')", motivo.c_str());
+		fin();
+	}
+	{
+		caso("Rare Metal Dragon: no se puede invocar normal", "rare_metal_dragon");
+		Escena e;
+		const int k = e.mano(0, "rare_metal_dragon");
+		e.mon(0, "celtic_guardian");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { 0 };
+		VERIFICA(!e.d.aplicar(j), "se invoco normal");
+		fin();
+	}
+	{
+		caso("Harpie Lady Sisters: no se puede invocar normal", "harpie_lady_sisters");
+		Escena e;
+		const int k = e.mano(0, "harpie_lady_sisters");
+		e.mon(0, "celtic_guardian");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { 0 };
+		VERIFICA(!e.d.aplicar(j), "se invoco normal");
+		fin();
+	}
+	{
+		caso("Spirit Ryu: en la batalla, descarta un Dragon: +1000 ATK/DEF", "spirit_ryu");
+		Escena e(F_BATALLA);
+		const int z = e.mon(0, "spirit_ryu");
+		e.mano(0, "baby_dragon");
+		const int a0 = e.d.l[0].m[(size_t)z].atkEf;
+		VERIFICA(e.activar(0, M(0, z)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)z].atkEf == a0 + 1000 && e.enCementerio(0, "baby_dragon") == 1, "ATK %d (esperado %d)", e.d.l[0].m[(size_t)z].atkEf, a0 + 1000);
+		fin();
+	}
+	{
+		caso("Element Magician: con un AGUA boca arriba, su control no cambia (Change of Heart no lo toma)", "element_magician");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int z = e.mon(0, "element_magician");
+		e.mon(0, "turtle_tiger");
+		const int k = e.mano(1, "change_of_heart");
+		const bool act = e.activar(1, H(1, k), { M(0, z) });
+		e.pasarTodo();
+		VERIFICA(!act || buscarZona(e, 0, "element_magician") >= 0, "el rival tomo el control");
+		fin();
+	}
+	{
+		caso("Twin-Headed Wolf: con otro Demonio, se niegan los efectos de los de volteo que destruye en batalla", "twin_headed_wolf");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "twin_headed_wolf");
+		e.mon(0, "summoned_skull");   // Demonio
+		const int o = e.mon(1, "man_eater_bug", true, true);
+		e.mon(0, "battle_ox");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].m[(size_t)o].vacia() && e.d.l[0].monstruos() == 3, "el volteo de Man-Eater Bug destruyo (monstruos %d)", e.d.l[0].monstruos());
+		fin();
+	}
+	// ---- Toons con efecto propio (el probador los encontro sin implementar)
+	{
+		caso("Toon Cannon Soldier: sacrifica 1 monstruo: 500 al rival", "toon_cannon_soldier");
+		Escena e;
+		mtArriba(e, 0, "toon_world");
+		const int z = e.mon(0, "toon_cannon_soldier");
+		e.mon(0, "celtic_guardian");
+		VERIFICA(e.activar(0, M(0, z)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 500 && e.d.l[0].monstruos() == 1, "LP rival %d (esperado 7500)", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Toon Masked Sorcerer: hace danno de batalla al rival: robas 1", "toon_masked_sorcerer");
+		Escena e(F_BATALLA);
+		mtArriba(e, 0, "toon_world");
+		const int a = e.mon(0, "toon_masked_sorcerer");
+		e.mon(1, "battle_ox");
+		const size_t m0 = e.d.l[0].mano.size();
+		VERIFICA(atacar(e, a, -1), "no ataco directo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[0].mano.size() == m0 + 1, "mano +%d (esperado 1)", (int)(e.d.l[0].mano.size() - m0));
+		fin();
+	}
+	{
+		caso("Toon Gemini Elf: hace danno de batalla al rival: descarta 1 al azar de su mano", "toon_gemini_elf");
+		Escena e(F_BATALLA);
+		mtArriba(e, 0, "toon_world");
+		const int a = e.mon(0, "toon_gemini_elf");
+		e.mon(1, "battle_ox");
+		e.d.l[1].mano = { "pot_of_greed" };
+		VERIFICA(atacar(e, a, -1), "no ataco directo");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].mano.empty(), "el rival no descarto");
+		fin();
+	}
+	{
+		caso("Toon Dark Magician Girl: +300 ATK por Dark Magician en los cementerios", "toon_dark_magician_girl");
+		Escena e;
+		mtArriba(e, 0, "toon_world");
+		e.d.l[1].cementerio = { "dark_magician" };
+		const int z = e.mon(0, "toon_dark_magician_girl");
+		e.d.recalcular();
+		VERIFICA(e.d.l[0].m[(size_t)z].atkEf == e.d.atk("toon_dark_magician_girl") + 300, "ATK %d", e.d.l[0].m[(size_t)z].atkEf);
+		fin();
+	}
+	{
+		caso("Toon Goblin Attack Force: tras atacar pasa a defensa y queda fija", "toon_goblin_attack_force");
+		Escena e(F_BATALLA);
+		mtArriba(e, 0, "toon_world");
+		const int a = e.mon(0, "toon_goblin_attack_force");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)a].defensa && motorPosicionFija(e.d, 0, a), "no quedo en defensa fija");
+		fin();
+	}
+	// ---- fusiones con efecto (el probador las encontro sin implementar)
+	{
+		caso("Elemental Hero Thunder Giant: descarta 1: destruye un boca arriba de ATK original menor", "elemental_hero_thunder_giant");
+		Escena e;
+		const int z = e.mon(0, "elemental_hero_thunder_giant");
+		const int o = e.mon(1, "battle_ox");
+		e.mano(0, "celtic_guardian");
+		VERIFICA(e.activar(0, M(0, z), { M(1, o) }, { 0 }), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)o].vacia() && e.d.l[0].mano.empty(), "Battle Ox siguio");
+		fin();
+	}
+	{
+		struct Can { const char* id; bool mtArriba, mtAbajo, monAbajo; };
+		for (const Can cn : { Can{ "xy_dragon_cannon", true, false, false }, Can{ "xz_tank_cannon", false, true, true }, Can{ "yz_tank_dragon", false, false, true },
+		                      Can{ "xyz_dragon_cannon", true, true, true } }) {
+			caso("X-Y-Z: descarta 1 y destruye una carta del rival del tipo que dice su texto", cn.id);
+			Escena e;
+			const int z = e.mon(0, cn.id);
+			const int ma = mtArriba(e, 1, "spirit_barrier");
+			const int mb = e.colocar(1, "mirror_force");
+			const int mo = e.mon(1, "celtic_guardian", true, true);
+			const Lugar obj = cn.mtArriba ? MT(1, ma) : cn.mtAbajo ? MT(1, mb) : M(1, mo);
+			e.mano(0, "battle_ox");
+			VERIFICA(e.activar(0, M(0, z), { obj }, { 0 }), "%s no se activo", cn.id);
+			e.pasarTodo();
+			VERIFICA(cartaEn(e.d, obj).empty(), "%s no destruyo su objetivo", cn.id);
+			// y no puede tomar lo que su texto no dice
+			if (!cn.mtArriba && !e.d.l[1].mt[(size_t)ma].vacia()) {
+				const std::vector<Lugar> objs = objetivosDe(e.d, 0, *defCarta(cn.id), M(0, z));
+				VERIFICA(std::find(objs.begin(), objs.end(), MT(1, ma)) == objs.end(), "%s puede tomar una magia/trampa boca arriba", cn.id);
+			}
+			fin();
+		}
+	}
+	{
+		caso("Dark Blade the Dragon Knight: hace danno de batalla: destierra hasta 3 monstruos del cementerio del rival", "dark_blade_the_dragon_knight");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "dark_blade_the_dragon_knight");
+		e.d.l[1].cementerio = { "battle_ox", "celtic_guardian", "dark_magician", "summoned_skull", "pot_of_greed" };
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].desterrados.size() == 3 && e.enCementerio(1, "pot_of_greed") == 1, "desterrados %d (esperado 3)", (int)e.d.l[1].desterrados.size());
+		fin();
+	}
+	{
+		caso("Gatling Dragon: 3 monedas: destruye tantos monstruos como caras", "gatling_dragon");
+		Escena e;
+		const int z = e.mon(0, "gatling_dragon");
+		for (int k = 0; k < 3; k++) e.mon(1, "celtic_guardian");
+		const size_t s0 = e.d.sucesos.size();
+		VERIFICA(e.activar(0, M(0, z)), "no se activo");
+		e.pasa(1);
+		// (rama classic-motor2: los elige quien lo activa, de todo el campo: aqui los 3 del rival)
+		for (int g = 0; g < 3 && e.d.ef.preg.tipo == P_ELEGIR; g++) {
+			int k = 0;
+			while (k < (int)e.d.ef.preg.cands.size() && e.d.ef.preg.cands[(size_t)k].lado != 1) k++;
+			e.elige(0, k);
+		}
+		e.pasarTodo();
+		int caras = -1;
+		for (size_t k = s0; k < e.d.sucesos.size(); k++)
+			if (e.d.sucesos[k].tipo == S_MODIFICA && e.d.sucesos[k].carta == "gatling_dragon") caras = e.d.sucesos[k].valor;
+		VERIFICA(caras >= 0 && 3 - e.d.l[1].monstruos() == caras && !e.d.l[0].m[(size_t)z].vacia(), "caras %d, destruidos %d", caras, 3 - e.d.l[1].monstruos());
+		fin();
+	}
+	{
+		caso("Super Robolady: vuelve al mazo de fusion e invoca a Super Roboyarou", "super_robolady");
+		Escena e;
+		const int z = e.mon(0, "super_robolady");
+		e.d.l[0].extra = { "super_roboyarou" };
+		VERIFICA(e.activar(0, M(0, z)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "super_roboyarou") >= 0 && e.d.l[0].extra.size() == 1 && e.d.l[0].extra[0] == "super_robolady", "no se cambiaron");
+		fin();
+	}
+	{
+		caso("Super Roboyarou: vuelve al mazo de fusion e invoca a Super Robolady", "super_roboyarou");
+		Escena e;
+		const int z = e.mon(0, "super_roboyarou");
+		e.d.l[0].extra = { "super_robolady" };
+		VERIFICA(e.activar(0, M(0, z)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "super_robolady") >= 0, "no se cambiaron");
+		fin();
+	}
+	{
+		caso("Chimera the Flying Mythical Beast: destruida, invoca a Berfomet del cementerio", "chimera_the_flying_mythical_beast");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int c = e.mon(0, "chimera_the_flying_mythical_beast");
+		e.d.l[0].cementerio = { "berfomet" };
+		const int a = e.mon(1, "blue_eyes");
+		VERIFICA(atacar(e, a, c), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(buscarZona(e, 0, "berfomet") >= 0, "Berfomet no llego");
+		fin();
+	}
+	{
+		caso("Mokey Mokey King: destruido, invoca los Mokey Mokey del cementerio", "mokey_mokey_king");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int k = e.mon(0, "mokey_mokey_king");
+		e.d.l[0].cementerio = { "mokey_mokey", "mokey_mokey", "battle_ox" };
+		const int a = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, k), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		int n = 0;
+		for (const Monstruo& m : e.d.l[0].m) n += m.id == "mokey_mokey";
+		VERIFICA(n == 2, "Mokey Mokey en el campo %d (esperado 2)", n);
+		fin();
+	}
+	{
+		caso("Elemental Hero Flame Wingman: destruye uno en batalla: su ATK al rival", "elemental_hero_flame_wingman");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "elemental_hero_flame_wingman");
+		const int o = e.mon(1, "battle_ox");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - (2100 - 1700) - 1700, "LP rival %d (esperado %d)", e.d.l[1].lp, LP_INICIAL - 2100);
+		fin();
+	}
+	{
+		caso("Dark Flare Knight: no recibes danno de batalla de sus combates", "dark_flare_knight");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int k = e.mon(0, "dark_flare_knight");
+		const int a = e.mon(1, "blue_eyes");
+		VERIFICA(atacar(e, a, k), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].lp == LP_INICIAL, "LP %d (esperado 8000)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Alligator's Sword Dragon: ataca directo si los boca arriba del rival son solo TIERRA, AGUA o FUEGO", "alligator_s_sword_dragon");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "alligator_s_sword_dragon");
+		e.mon(1, "battle_ox");   // TIERRA
+		VERIFICA(atacar(e, a, -1), "no ataco directo");
+		e.pasarTodo();
+		Escena g(F_BATALLA);
+		const int b = g.mon(0, "alligator_s_sword_dragon");
+		g.mon(1, "dark_magician");   // OSCURIDAD
+		VERIFICA(!atacar(g, b, -1), "ataco directo con un OSCURIDAD del rival");
+		fin();
+	}
+	{
+		caso("Reaper on the Nightmare: no se destruye en batalla; ataca directo si el rival solo tiene monstruos en defensa", "reaper_on_the_nightmare");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int r = e.mon(0, "reaper_on_the_nightmare");
+		const int a = e.mon(1, "blue_eyes");
+		VERIFICA(atacar(e, a, r), "no ataco");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)r].vacia(), "Reaper se destruyo en batalla");
+		Escena g(F_BATALLA);
+		const int b = g.mon(0, "reaper_on_the_nightmare");
+		g.mon(1, "giant_soldier_of_stone", true);
+		VERIFICA(atacar(g, b, -1), "no ataco directo");
+		fin();
+	}
+	// ---- lote 17 del probador
+	{
+		caso("Battle-Scarred: tu Archfiend paga en tu fase de espera: el rival paga lo mismo", "battle_scarred");
+		Escena e;
+		const int z = e.mon(0, "infernalqueen_archfiend");
+		VERIFICA(usarColocada(e, 0, "battle_scarred", { M(0, z) }), "no se activo");
+		pasarFases(e, 1);
+		pasarFases(e, 0);
+		VERIFICA(e.d.l[0].lp == LP_INICIAL - 500 && e.d.l[1].lp == LP_INICIAL - 500, "LP %d / %d (esperado 7500 / 7500)", e.d.l[0].lp, e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Chosen One: 1 monstruo y 2 no monstruos de la mano; si sale el monstruo, se invoca y las otras al cementerio", "chosen_one");
+		Escena e;
+		e.mano(0, "battle_ox");
+		e.mano(0, "pot_of_greed");
+		e.mano(0, "raigeki");
+		VERIFICA(usar(e, "chosen_one"), "no se activo");
+		resolverDisparos(e);
+		const bool salio = buscarZona(e, 0, "battle_ox") >= 0;
+		VERIFICA(e.d.l[0].mano.empty() && (salio ? e.d.l[0].cementerio.size() >= 2 + 1 : e.d.l[0].cementerio.size() >= 3 + 1), "mano %d, cementerio %d",
+		         (int)e.d.l[0].mano.size(), (int)e.d.l[0].cementerio.size());
+		fin();
+	}
+	{
+		caso("Dark Scorpion Combination: con los 5 Dark Scorpion, este turno atacan directo", "dark_scorpion_combination");
+		Escena e;
+		for (const char* id : { "don_zaloog", "dark_scorpion_cliff_the_trap_remover", "dark_scorpion_chick_the_yellow", "dark_scorpion_gorg_the_strong",
+		                        "dark_scorpion_meanae_the_thorn" })
+			e.mon(0, id);
+		e.mon(1, "battle_ox");
+		VERIFICA(usarColocada(e, 0, "dark_scorpion_combination"), "no se activo");
+		e.d.fase = F_BATALLA;
+		VERIFICA(atacar(e, buscarZona(e, 0, "don_zaloog"), -1), "Don Zaloog no ataco directo");
+		fin();
+	}
+	{
+		caso("Dark Scorpion - Meanae the Thorn: hace danno de batalla: busca un Dark Scorpion del mazo", "dark_scorpion_meanae_the_thorn");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "dark_scorpion_meanae_the_thorn");
+		e.d.l[0].mazo.push_back("dark_scorpion_gorg_the_strong");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(std::find(e.d.l[0].mano.begin(), e.d.l[0].mano.end(), "dark_scorpion_gorg_the_strong") != e.d.l[0].mano.end(), "no busco");
+		fin();
+	}
+	{
+		caso("Miracle Restoring: quita 2 contadores de magia y revive a Dark Magician", "miracle_restoring");
+		Escena e;
+		const int z = e.mon(0, "skilled_dark_magician");
+		e.d.l[0].m[(size_t)z].contadores = 2;
+		e.d.l[0].cementerio = { "dark_magician" };
+		VERIFICA(usarColocada(e, 0, "miracle_restoring"), "no se activo");
+		VERIFICA(buscarZona(e, 0, "dark_magician") >= 0 && e.d.l[0].m[(size_t)z].contadores == 0, "no revivio o no quito los contadores");
+		fin();
+	}
+	{
+		caso("Ocean Dragon Lord - Neo-Daedalus: se invoca sacrificando a Levia-Dragon - Daedalus", "ocean_dragon_lord_neo_daedalus");
+		Escena e;
+		e.mon(0, "levia_dragon_daedalus");
+		const int k = e.mano(0, "ocean_dragon_lord_neo_daedalus");
+		VERIFICA(e.activar(0, H(0, k)), "no se pudo invocar (motivo '%s')", motivoNoActivar(e.d, 0, H(0, k), false).c_str());
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "ocean_dragon_lord_neo_daedalus") >= 0 && e.d.l[0].monstruos() == 1, "no llego");
+		fin();
+	}
+	{
+		caso("Array of Revealing Light: el tipo declarado no ataca el turno en que se invoca", "array_of_revealing_light");
+		Escena e;
+		for (auto& c : e.d.l[1].mazo) c = "battle_ox";   // (Guerrero-Bestia: el tipo mas comun del rival)
+		VERIFICA(usar(e, "array_of_revealing_light"), "no se activo");
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int k = e.mano(1, "battle_ox");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		e.pasarTodo();
+		e.d.fase = F_BATALLA;
+		VERIFICA(!e.d.puedeAtacar(1, buscarZona(e, 1, "battle_ox")), "el recien invocado del tipo declarado puede atacar");
+		fin();
+	}
+}
 static void iaUsa()
 {
 	fprintf(stderr, "la IA (Cerebro) usa los efectos\n");
@@ -8421,12 +11534,2099 @@ static void iaUsa()
 	}
 }
 
+// ---- rama classic-motor2: las reglas que faltaban (cada caso documenta la carta: escenario -> lo que dice su texto)
+static Jugada ataque(int z, int objetivo)
+{
+	Jugada j;
+	j.tipo = J_ATACAR;
+	j.zona = z;
+	j.objetivo = objetivo;
+	return j;
+}
+static void tandaMotor2Fusiones()
+{
+	fprintf(stderr, "tanda motor2: las 9 fusiones, Reaper on the Nightmare y los X-Y-Z\n");
+	{
+		caso("Dark Paladin: al activar el rival una magia, descarta 1: la niega y la destruye; +500 ATK por Dragon en campo y cementerios", "dark_paladin");
+		Escena e;
+		const int p = e.mon(1, "dark_paladin");
+		e.mon(1, "celtic_guardian");
+		e.mano(1, "battle_ox");
+		e.d.l[0].cementerio.push_back("blue_eyes");
+		e.d.recalcular();
+		VERIFICA(e.d.atkM(e.d.l[1].m[(size_t)p]) == 3400, "ATK %d (esperado 2900 + 500 por el Blue-Eyes del cementerio)", e.d.atkM(e.d.l[1].m[(size_t)p]));
+		const int k = e.mano(0, "raigeki");
+		VERIFICA(e.activar(0, H(0, k)), "Raigeki no se activo");
+		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 1, "Dark Paladin no tuvo su ventana");
+		VERIFICA(e.activar(1, M(1, p), {}, { 0 }), "Dark Paladin no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 2, "Raigeki destruyo (quedan %d)", e.d.l[1].monstruos());
+		VERIFICA(e.enCementerio(0, "raigeki") == 1 && e.enCementerio(1, "battle_ox") == 1, "Raigeki o el descarte no estan en el cementerio");
+		fin();
+	}
+	{
+		caso("Thousand-Eyes Restrict: equipa un monstruo del rival (su ATK/DEF), los demas no atacan ni cambian de posicion", "thousand_eyes_restrict");
+		Escena e;
+		const int t = e.mon(0, "thousand_eyes_restrict");
+		const int o = e.mon(1, "battle_ox");
+		const int s = e.mon(1, "summoned_skull");
+		const int c = e.mon(0, "celtic_guardian");
+		VERIFICA(e.activar(0, M(0, t), { M(1, o) }), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)o].vacia(), "Battle Ox sigue en el campo del rival");
+		VERIFICA(e.d.atkM(e.d.l[0].m[(size_t)t]) == 1700 && e.d.defM(e.d.l[0].m[(size_t)t]) == 1000, "ATK/DEF %d/%d (esperado 1700/1000)", e.d.atkM(e.d.l[0].m[(size_t)t]),
+		         e.d.defM(e.d.l[0].m[(size_t)t]));
+		VERIFICA(!motorPuedeAtacar(e.d, 1, s) && !motorPuedeAtacar(e.d, 0, c) && motorPuedeAtacar(e.d, 0, t), "los demas pueden atacar (o el no)");
+		VERIFICA(motorPosicionFija(e.d, 1, s) && motorPosicionFija(e.d, 0, c) && !motorPosicionFija(e.d, 0, t), "los demas pueden cambiar de posicion");
+		VERIFICA(!e.activar(0, M(0, t), { M(1, s) }), "equipo un segundo monstruo");
+		// si se fuera a destruir en batalla, se destruye el equipado
+		VERIFICA(motorSustitutoBatalla(e.d, 0, t) && e.enCementerio(0, "battle_ox") + e.enCementerio(1, "battle_ox") == 1, "el equipado no lo sustituyo");
+		fin();
+	}
+	{
+		caso("Dark Balter the Terrible: al activarse una magia normal, paga 1000 y niega su efecto", "dark_balter_the_terrible");
+		Escena e;
+		const int b = e.mon(1, "dark_balter_the_terrible");
+		const int k = e.mano(0, "pot_of_greed");
+		const size_t antes = e.d.l[0].mano.size();
+		VERIFICA(e.activar(0, H(0, k)), "Pot of Greed no se activo");
+		VERIFICA(e.activar(1, M(1, b)), "Dark Balter no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mano.size() == antes - 1 && e.d.l[1].lp == LP_INICIAL - 1000, "mano %d (esperado %d), LP %d", (int)e.d.l[0].mano.size(), (int)antes - 1, e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Dark Balter the Terrible: no responde a una magia rapida; el destruido en batalla no activa su efecto", "dark_balter_the_terrible");
+		Escena e(F_BATALLA);
+		const int b = e.mon(0, "dark_balter_the_terrible");
+		e.mon(1, "sangan");
+		const int k = e.mano(1, "mystical_space_typhoon");
+		(void)k;
+		VERIFICA(motivoNoActivar(e.d, 0, M(0, b), true) != "", "se activa sin una magia normal");
+		VERIFICA(e.d.aplicar(ataque(b, 0)), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.d.l[1].mano.size() == 1, "Sangan busco (mano del rival %d)", (int)e.d.l[1].mano.size());
+		fin();
+	}
+	{
+		caso("Ryu Senshi: al activarse una trampa normal, paga 1000 y la niega; la magia que lo elige se niega y se destruye", "ryu_senshi");
+		Escena e(F_BATALLA);
+		const int r = e.mon(0, "ryu_senshi");
+		e.mon(1, "kuriboh");
+		const int mf = e.colocar(1, "mirror_force");
+		VERIFICA(e.d.aplicar(ataque(r, 0)), "no ataco");
+		VERIFICA(e.activar(1, MT(1, mf)), "Mirror Force no se activo");
+		VERIFICA(e.activar(0, M(0, r)), "Ryu Senshi no respondio");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)r].vacia() && e.d.l[0].lp == LP_INICIAL - 1000 && e.enCementerio(1, "mirror_force") == 1, "Mirror Force no se nego");
+		fin();
+	}
+	{
+		caso("Ryu Senshi: Book of Moon que lo elige se niega y se destruye", "ryu_senshi");
+		Escena e;
+		const int r = e.mon(1, "ryu_senshi");
+		const int k = e.mano(0, "book_of_moon");
+		VERIFICA(e.activar(0, H(0, k), { M(1, r) }), "Book of Moon no se activo");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[1].m[(size_t)r].bocaAbajo && e.enCementerio(0, "book_of_moon") == 1, "Book of Moon lo puso boca abajo");
+		fin();
+	}
+	{
+		caso("Fiend Skull Dragon: niega los efectos de los de volteo y la trampa que lo elige (se destruye)", "fiend_skull_dragon");
+		Escena e(F_BATALLA);
+		const int f = e.mon(0, "fiend_skull_dragon");
+		const int bug = e.mon(1, "man_eater_bug");
+		VERIFICA(efectoNegado(e.d, e.d.l[1].m[(size_t)bug]), "Man-Eater Bug no esta negado");
+		const int sa = e.colocar(1, "sakuretsu_armor");
+		VERIFICA(e.d.aplicar(ataque(f, bug)), "no ataco");
+		VERIFICA(e.activar(1, MT(1, sa), { M(0, f) }), "Sakuretsu Armor no se activo");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)f].vacia() && e.enCementerio(1, "sakuretsu_armor") == 1, "Sakuretsu Armor lo destruyo");
+		fin();
+	}
+	{
+		caso("Arcana Knight Joker: al elegirlo una magia, descarta una magia y niega el efecto (1 vez por turno)", "arcana_knight_joker");
+		Escena e;
+		e.d.activo = 1;
+		const int a = e.mon(0, "arcana_knight_joker");
+		e.mano(0, "battle_ox");
+		e.mano(0, "pot_of_greed");
+		const int k = e.mano(1, "book_of_moon");
+		VERIFICA(e.activar(1, H(1, k), { M(0, a) }), "Book of Moon no se activo");
+		VERIFICA(e.activar(0, M(0, a)), "Arcana Knight Joker no respondio");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)a].bocaAbajo && e.enCementerio(0, "pot_of_greed") == 1 && e.enCementerio(0, "battle_ox") == 0,
+		         "no se nego o descarto mal (mano %d)", (int)e.d.l[0].mano.size());
+		fin();
+	}
+	{
+		caso("King Dragun: el rival no elige Dragones; 1 vez por turno invoca un Dragon de la mano", "king_dragun");
+		Escena e;
+		const int k = e.mon(0, "king_dragun");
+		e.mano(0, "blue_eyes");
+		const int b = e.mano(1, "book_of_moon");
+		const std::vector<Lugar> objs = objetivosDe(e.d, 1, *defCarta("book_of_moon"), H(1, b));
+		VERIFICA(std::find(objs.begin(), objs.end(), M(0, k)) == objs.end(), "el rival puede elegir a King Dragun");
+		VERIFICA(e.activar(0, M(0, k)), "no se activo");
+		e.pasarTodo();
+		bool hay = false;
+		for (const Monstruo& m : e.d.l[0].m) hay |= m.id == "blue_eyes";
+		VERIFICA(hay && e.d.l[0].mano.empty(), "el Blue-Eyes no llego");
+		VERIFICA(!e.activar(0, M(0, k)), "se uso dos veces");
+		fin();
+	}
+	{
+		caso("Ojama King: 3 zonas de monstruo del rival no se pueden usar mientras este boca arriba", "ojama_king");
+		Escena e;
+		const int o = ojamaConDisparo(e, 0);
+		e.pasarTodo();   // (rama classic-elecciones: las zonas se eligen al resolver; aca, las primeras)
+		int libres = 0;
+		for (int z = 0; z < ZONAS; z++) libres += !e.d.l[1].bloqueada[(size_t)z];
+		VERIFICA(libres == 2, "zonas libres del rival %d (esperado 2)", libres);
+		e.mon(1, "battle_ox");
+		e.mon(1, "battle_ox");
+		VERIFICA(e.d.l[1].libre() < 0, "el rival tiene una tercera zona");
+		e.d.alCementerio(0, o);
+		VERIFICA(e.d.l[1].libre() >= 0, "las zonas siguen bloqueadas");
+		fin();
+	}
+	{
+		caso("The Last Warrior from Another Planet: invocado, destruye tus demas monstruos; nadie invoca (colocar si)", "the_last_warrior_from_another_planet");
+		Escena e;
+		e.mon(0, "celtic_guardian");
+		e.mano(0, "polymerization");
+		e.mano(0, "zombyra_the_dark");
+		e.mano(0, "maryokutai");
+		e.d.l[0].extra.push_back("the_last_warrior_from_another_planet");
+		Jugada j;
+		j.tipo = J_FUSION;
+		j.mano = 0;
+		j.manoExtra = { 1, 2 };
+		j.carta = "the_last_warrior_from_another_planet";
+		VERIFICA(e.d.aplicar(j), "no se fusiono");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].monstruos() == 1 && e.enCementerio(0, "celtic_guardian") == 1, "quedan %d monstruos", e.d.l[0].monstruos());
+		e.mano(0, "battle_ox");
+		Jugada inv;
+		inv.tipo = J_INVOCAR;
+		inv.mano = (int)e.d.l[0].mano.size() - 1;
+		VERIFICA(!e.d.aplicar(inv), "se invoco normal");
+		inv.tipo = J_COLOCAR;
+		VERIFICA(e.d.aplicar(inv), "no se pudo colocar");
+		const int mr = e.mano(0, "monster_reborn");
+		VERIFICA(motivoNoActivar(e.d, 0, H(0, mr), false) == "ef.no_condicion", "Monster Reborn se puede activar");
+		VERIFICA(!motorPuedeInvocarM2(e.d, 1, 0) && !motorPuedeInvocarM2(e.d, 1, 2), "el rival puede invocar");
+		fin();
+	}
+	{
+		caso("Reaper on the Nightmare: ataque directo: el rival descarta 1 al azar; se destruye al elegirlo un efecto", "reaper_on_the_nightmare");
+		Escena e(F_BATALLA);
+		const int r = e.mon(0, "reaper_on_the_nightmare");
+		e.mano(1, "battle_ox");
+		e.mano(1, "celtic_guardian");
+		VERIFICA(e.d.aplicar(ataque(r, -1)), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].mano.size() == 1 && e.d.l[1].lp == LP_INICIAL - 800, "mano del rival %d, LP %d", (int)e.d.l[1].mano.size(), e.d.l[1].lp);
+		e.d.fase = F_PRINCIPAL2;
+		const int k = e.mano(0, "rush_recklessly");
+		VERIFICA(e.activar(0, H(0, k), { M(0, r) }), "Rush Recklessly no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)r].vacia(), "Reaper sigue en el campo");
+		fin();
+	}
+	{
+		caso("XYZ-Dragon Cannon: se invoca desterrando X, Y y Z del campo (sin Polymerization); no vuelve del cementerio", "xyz_dragon_cannon");
+		Escena e;
+		e.mon(0, "x_head_cannon");
+		e.mon(0, "y_dragon_head");
+		e.mon(0, "z_metal_tank");
+		e.d.l[0].extra.push_back("xyz_dragon_cannon");
+		const int p = e.mano(0, "polymerization");
+		Jugada poly;
+		poly.tipo = J_FUSION;
+		poly.mano = p;
+		poly.tributos = { 0, 1, 2 };
+		poly.carta = "xyz_dragon_cannon";
+		VERIFICA(!e.d.aplicar(poly), "se fusiono con Polymerization");
+		Jugada j;
+		j.tipo = J_FUSION;
+		j.carta = "xyz_dragon_cannon";
+		VERIFICA(e.d.aplicar(j), "no se invoco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].monstruos() == 1 && e.d.l[0].m[0].id == "xyz_dragon_cannon" && e.d.l[0].desterrados.size() == 3, "campo %d, desterrados %d",
+		         e.d.l[0].monstruos(), (int)e.d.l[0].desterrados.size());
+		e.d.alCementerio(0, 0);
+		const int mr = e.mano(0, "monster_reborn");
+		VERIFICA(motivoNoActivar(e.d, 0, H(0, mr), false) == "ef.sin_objetivo", "Monster Reborn lo puede traer");
+		fin();
+	}
+	for (const char* id : { "xy_dragon_cannon", "xz_tank_cannon", "yz_tank_dragon" }) {
+		caso("X-Y-Z: se invoca desterrando sus 2 piezas del campo (una puede estar equipada como union)", id);
+		Escena e;
+		const std::vector<std::string>& rec = base.fusiones.at(id);
+		const int a = e.mon(0, rec[0].c_str());
+		mtArriba(e, 0, rec[1].c_str(), e.d.l[0].m[(size_t)a].uid);   // (la segunda pieza equipada como union)
+		e.d.l[0].extra.push_back(id);
+		Jugada j;
+		j.tipo = J_FUSION;
+		j.carta = id;
+		VERIFICA(e.d.aplicar(j), "%s no se invoco", id);
+		VERIFICA(e.d.l[0].monstruos() == 1 && e.d.l[0].desterrados.size() == 2 && e.d.l[0].libreMT() == 0, "%s: campo %d, desterrados %d", id, e.d.l[0].monstruos(),
+		         (int)e.d.l[0].desterrados.size());
+		fin();
+	}
+	{
+		caso("IA: con X, Y y Z en el campo invoca a XYZ-Dragon Cannon", "xyz_dragon_cannon");
+		Escena e;
+		e.mon(0, "x_head_cannon");
+		e.mon(0, "y_dragon_head");
+		e.mon(0, "z_metal_tank");
+		e.d.l[0].extra.push_back("xyz_dragon_cannon");
+		e.mon(1, "summoned_skull");
+		Cerebro c(PERSONALIDADES[0], 8, 3);
+		const Jugada j = c.decidir(e.d);
+		VERIFICA(j.tipo == J_FUSION && j.carta == "xyz_dragon_cannon", "la IA jugo %s %s", NOMBRE_JUGADA[j.tipo], j.carta.c_str());
+		fin();
+	}
+}
+// (rama classic-motor2) ventanas de respuesta y las dudosas
+static void tandaMotor2Ventanas()
+{
+	fprintf(stderr, "tanda motor2: ventanas (espera, final de la batalla, colocar, repeticion) y dudosas\n");
+	Jugada fase;
+	fase.tipo = J_FASE;
+	{
+		caso("Curse of Fiend: solo en tu fase de espera: cambia las posiciones; ese turno no se cambian a mano", "curse_of_fiend");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.d.fase = F_FINAL;
+		const int a = e.mon(0, "battle_ox");
+		const int b = e.mon(1, "celtic_guardian", true);
+		const int k = e.mano(0, "curse_of_fiend");
+		VERIFICA(motivoNoActivar(e.d, 0, H(0, k), false) != "", "se activa fuera de la fase de espera");
+		e.d.pasarTurno();   // (tu turno: la fase de espera abre su ventana)
+		VERIFICA(e.d.ef.ventana.tipo == V_ESPERA && e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0, "no hubo ventana en tu fase de espera");
+		VERIFICA(e.activar(0, H(0, (int)e.d.l[0].mano.size() - 2)), "no se activo en la espera");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)a].defensa && !e.d.l[1].m[(size_t)b].defensa && e.d.fase == F_PRINCIPAL1, "posiciones %d/%d, fase %d", e.d.l[0].m[(size_t)a].defensa,
+		         e.d.l[1].m[(size_t)b].defensa, (int)e.d.fase);
+		Jugada p;
+		p.tipo = J_POSICION;
+		p.zona = a;
+		e.d.l[0].m[(size_t)a].llegoEsteTurno = false;
+		VERIFICA(!e.d.aplicar(p), "se cambio de posicion a mano");
+		fin();
+	}
+	{
+		caso("Aqua Spirit: en la fase de espera del rival cambia la posicion de uno suyo boca arriba (fijo ese turno)", "aqua_spirit");
+		Escena e;
+		e.d.fase = F_FINAL;
+		e.mon(1, "aqua_spirit");
+		const int s = e.mon(0, "summoned_skull");
+		e.d.l[0].mano.clear();
+		e.d.pasarTurno();   // (turno del lado 1: no; la espera es del rival del Aqua Spirit cuando juega el lado 0)
+		VERIFICA(e.d.ef.preg.tipo == P_NADA, "hubo ventana en la espera propia");
+		e.d.fase = F_FINAL;
+		e.d.l[1].mano.clear();
+		e.d.pasarTurno();
+		VERIFICA(e.d.ef.ventana.tipo == V_ESPERA && e.d.ef.preg.lado == 1, "no hubo ventana en la espera del rival");
+		VERIFICA(e.activar(1, M(1, 0)), "Aqua Spirit no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)s].defensa && motorPosicionFija(e.d, 0, s), "Summoned Skull no paso a defensa fija");
+		fin();
+	}
+	{
+		caso("D.D. Borderline: sin magias en tu cementerio, nadie tiene fase de batalla", "d_d_borderline");
+		Escena e;
+		mtArriba(e, 0, "d_d_borderline");
+		e.mon(0, "battle_ox");
+		e.d.aplicar(fase);
+		VERIFICA(e.d.fase == F_PRINCIPAL2, "entro en la batalla (fase %d)", (int)e.d.fase);
+		fin();
+	}
+	{
+		caso("Final de la batalla: el rival responde (MST) antes de la principal 2", "mystical_space_typhoon");
+		Escena e(F_BATALLA);
+		const int sw = mtArriba(e, 0, "swords_of_revealing_light");
+		const int m = e.colocar(1, "mystical_space_typhoon");
+		e.d.aplicar(fase);
+		VERIFICA(e.d.ef.ventana.tipo == V_FIN_BATALLA && e.d.ef.preg.lado == 1 && e.d.fase == F_BATALLA, "no hubo ventana al final de la batalla");
+		VERIFICA(e.activar(1, MT(1, m), { MT(0, sw) }), "MST no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.fase == F_PRINCIPAL2 && e.d.l[0].mt[(size_t)sw].vacia(), "fase %d", (int)e.d.fase);
+		fin();
+	}
+	{
+		caso("Repeticion del ataque: Scapegoat ante un ataque directo: el atacante puede volver a atacar", "scapegoat");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "summoned_skull");
+		const int sg = e.colocar(1, "scapegoat");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		VERIFICA(e.activar(1, MT(1, sg)), "Scapegoat no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL && e.d.l[1].monstruos() == 4, "el ataque siguio (LP %d)", e.d.l[1].lp);
+		VERIFICA(e.d.puedeAtacar(0, a), "no puede volver a atacar (repeticion)");
+		VERIFICA(atacar(e, a, 0), "no pudo declarar el nuevo ataque");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 3 && !e.d.puedeAtacar(0, a), "el segundo ataque no se hizo (o ataca de mas)");
+		fin();
+	}
+	{
+		caso("Weather Report: destruye las Swords del rival: ese turno hay dos fases de batalla", "weather_report");
+		Escena e;
+		const int w = e.mon(0, "weather_report", true, true);
+		e.d.l[0].m[(size_t)w].llegoEsteTurno = false;
+		mtArriba(e, 1, "swords_of_revealing_light");
+		const int a = e.mon(0, "battle_ox");
+		Jugada v;
+		v.tipo = J_VOLTEAR;
+		v.zona = w;
+		VERIFICA(e.d.aplicar(v), "no se volteo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].libreMT() == 0, "Swords siguen");
+		e.d.aplicar(fase);
+		e.pasarTodo();
+		VERIFICA(atacar(e, a, -1), "no ataco en la primera batalla");
+		e.pasarTodo();
+		e.d.aplicar(fase);
+		e.pasarTodo();
+		VERIFICA(e.d.fase == F_BATALLA && atacar(e, a, -1), "no hubo segunda batalla (fase %d)", (int)e.d.fase);
+		e.pasarTodo();
+		e.d.aplicar(fase);
+		e.pasarTodo();
+		VERIFICA(e.d.fase == F_PRINCIPAL2 && e.d.l[1].lp == LP_INICIAL - 2 * 1700, "fase %d, LP %d", (int)e.d.fase, e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Goddess of Whim: cantas la moneda (pregunta): acierto doble, fallo la mitad", "goddess_of_whim");
+		Escena e;
+		const int g = e.mon(0, "goddess_of_whim");
+		VERIFICA(e.activar(0, M(0, g)), "no se activo");
+		e.pasa(1);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.texto == "ef.elegir.cara", "no pregunto la moneda");
+		e.pasarTodo();
+		const int at = e.d.atkM(e.d.l[0].m[(size_t)g]);
+		VERIFICA(at == 1900 || at == 475, "ATK %d", at);
+		fin();
+	}
+	{
+		caso("Valkyrie Vierte: destruida en batalla, eliges una Valkyrie del mazo para invocarla", "valkyrie_vierte");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "summoned_skull");
+		e.mon(1, "valkyrie_vierte");
+		e.d.l[1].mazo.push_back("valkyrie_zweite");
+		e.d.l[1].mazo.push_back("valkyrie_dritte");
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		for (int g = 0; g < 10 && !(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 1); g++) {
+			Jugada j;
+			j.tipo = J_PASAR;
+			if (!e.d.aplicar(j)) break;
+		}
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 1 && e.d.ef.preg.cands.size() == 2, "no pregunto (o con %d candidatos)", (int)e.d.ef.preg.cands.size());
+		int k = 0;
+		while (k < (int)e.d.ef.preg.cands.size() && cartaEn(e.d, e.d.ef.preg.cands[(size_t)k]) != "valkyrie_dritte") k++;
+		VERIFICA(e.elige(1, k), "no se pudo elegir");
+		e.pasarTodo();
+		bool hay = false;
+		for (const Monstruo& m : e.d.l[1].m) hay |= m.id == "valkyrie_dritte";
+		VERIFICA(hay, "no llego la elegida");
+		fin();
+	}
+	{
+		caso("Metalmorph: el equipado que ataca gana la mitad del ATK del atacado solo en el calculo", "metalmorph");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "celtic_guardian");   // 1400 + 300
+		mtArriba(e, 0, "metalmorph", e.d.l[0].m[(size_t)a].uid);
+		e.mon(1, "summoned_skull");                  // 2500: 1700 + 1250 = 2950
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 0 && e.d.l[1].lp == LP_INICIAL - 450 && e.d.atkM(e.d.l[0].m[(size_t)a]) == 1700, "LP %d, ATK %d", e.d.l[1].lp,
+		         e.d.atkM(e.d.l[0].m[(size_t)a]));
+		fin();
+	}
+	{
+		caso("Neko Mane King: un efecto del rival lo manda al cementerio en su turno: pasa a la fase final", "neko_mane_king");
+		Escena e;
+		e.mon(1, "neko_mane_king");
+		const int k = e.mano(0, "raigeki");
+		VERIFICA(e.activar(0, H(0, k)), "Raigeki no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.fase == F_FINAL || e.d.activo == 1, "no paso a la fase final (fase %d)", (int)e.d.fase);
+		fin();
+	}
+	{
+		caso("Gravekeeper's Vassal: su danno de batalla es danno de efecto (lo que para el danno de batalla no lo para)", "gravekeeper_s_vassal");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "gravekeeper_s_vassal");
+		e.d.ef.sinDannoBatallaHasta[1] = e.d.turno;   // (como Ride of the Valkyries: sin danno de batalla)
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 700, "LP %d", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Mokey Mokey King: desterrado (no solo destruido) invoca los Mokey Mokey del cementerio", "mokey_mokey_king");
+		Escena e;
+		const int k = e.mon(0, "mokey_mokey_king");
+		e.d.l[0].cementerio = { "mokey_mokey", "mokey_mokey" };
+		e.d.sacarMonstruo(0, k, false);
+		e.d.ef.ventana = Ventana{};
+		motorVentana(e.d, Ventana{ V_DISPARO, 0, -1, 0, {} });
+		e.pasarTodo();
+		int n = 0;
+		for (const Monstruo& m : e.d.l[0].m) n += m.id == "mokey_mokey";
+		VERIFICA(n == 2, "Mokey Mokey en el campo %d (esperado 2)", n);
+		fin();
+	}
+}
+// (rama classic-motor2) las cartas parciales completadas segun su texto
+static bool hayEnCampo(const Escena& e, int lado, const char* id)
+{
+	for (const Monstruo& m : e.d.l[(size_t)lado].m)
+		if (m.id == id) return true;
+	return false;
+}
+static void tandaMotor2Parciales()
+{
+	fprintf(stderr, "tanda motor2: parciales completadas\n");
+	{
+		caso("Dark Magic Curtain: no si ya invocaste; despues ese turno no invocas mas (colocar si)", "dark_magic_curtain");
+		Escena e;
+		e.d.l[0].mazo.push_back("dark_magician");
+		const int k = e.mano(0, "dark_magic_curtain");
+		VERIFICA(e.activar(0, H(0, k)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(hayEnCampo(e, 0, "dark_magician"), "Dark Magician no llego");
+		e.mano(0, "battle_ox");
+		Jugada inv;
+		inv.tipo = J_INVOCAR;
+		inv.mano = (int)e.d.l[0].mano.size() - 1;
+		VERIFICA(!e.d.aplicar(inv), "invoco despues");
+		inv.tipo = J_COLOCAR;
+		VERIFICA(e.d.aplicar(inv), "no pudo colocar");
+		Escena f;
+		f.d.l[0].mazo.push_back("dark_magician");
+		f.mano(0, "battle_ox");
+		Jugada n;
+		n.tipo = J_INVOCAR;
+		n.mano = 0;
+		VERIFICA(f.d.aplicar(n), "no invoco");
+		f.pasarTodo();
+		const int k2 = f.mano(0, "dark_magic_curtain");
+		VERIFICA(motivoNoActivar(f.d, 0, H(0, k2), false) == "ef.no_condicion", "se activa tras invocar");
+		fin();
+	}
+	{
+		caso("Stray Lambs: 2 fichas; ese turno no invocas mas (colocar si)", "stray_lambs");
+		Escena e;
+		const int k = e.mano(0, "stray_lambs");
+		VERIFICA(e.activar(0, H(0, k)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].monstruos() == 2 && !motorPuedeInvocarM2(e.d, 0, 0) && !motorPuedeInvocarM2(e.d, 0, 2), "fichas %d o puede invocar", e.d.l[0].monstruos());
+		fin();
+	}
+	{
+		caso("Jowgen the Spiritualist: nadie invoca de modo especial (Monster Reborn no se activa)", "jowgen_the_spiritualist");
+		Escena e;
+		e.mon(1, "jowgen_the_spiritualist");
+		e.d.l[0].cementerio.push_back("summoned_skull");
+		const int k = e.mano(0, "monster_reborn");
+		VERIFICA(motivoNoActivar(e.d, 0, H(0, k), false) == "ef.no_condicion" && motorPuedeInvocarM2(e.d, 0, 0), "Monster Reborn se activa (o no se puede invocar normal)");
+		fin();
+	}
+	{
+		caso("Gravity Axe - Grarl: +500 y los del rival no cambian de posicion", "gravity_axe_grarl");
+		Escena e;
+		const int a = e.mon(0, "celtic_guardian");
+		const int b = e.mon(1, "battle_ox");
+		mtArriba(e, 0, "gravity_axe_grarl", e.d.l[0].m[(size_t)a].uid);
+		VERIFICA(e.d.atkM(e.d.l[0].m[(size_t)a]) == 1900 && motorPosicionFija(e.d, 1, b) && !motorPosicionFija(e.d, 0, a), "ATK %d o posiciones", e.d.atkM(e.d.l[0].m[(size_t)a]));
+		fin();
+	}
+	{
+		caso("The Unhappy Girl: el que combatio con ella no ataca ni cambia de posicion mientras ella este en ataque", "the_unhappy_girl");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "summoned_skull");
+		const int g = e.mon(1, "the_unhappy_girl");
+		VERIFICA(atacar(e, a, g), "no ataco");
+		e.pasarTodo();
+		e.d.l[0].m[(size_t)a].ataco = false;
+		VERIFICA(!e.d.l[1].m[(size_t)g].vacia() && !motorPuedeAtacar(e.d, 0, a) && motorPosicionFija(e.d, 0, a), "Summoned Skull sigue libre");
+		cambiarPosicionEfecto(e.d, 1, g, true, false);
+		VERIFICA(motorPuedeAtacar(e.d, 0, a), "sigue bloqueado con ella en defensa");
+		fin();
+	}
+	{
+		caso("Solar Flare Dragon: con otro Piro tuyo no se puede atacar", "solar_flare_dragon");
+		Escena e;
+		const int s = e.mon(1, "solar_flare_dragon");
+		VERIFICA(motorAtacable(e.d, 1, s), "no se puede atacar solo");
+		e.mon(1, "blazing_inpachi");
+		VERIFICA(!motorAtacable(e.d, 1, s), "se puede atacar con otro Piro");
+		fin();
+	}
+	{
+		caso("Inferno: destruye en batalla y va al cementerio: 1500 al rival", "inferno");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "inferno");
+		e.mon(1, "kuriboh", true);
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 1500, "LP %d", e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Fenrir: destruye en batalla: el rival se salta su proximo robo", "fenrir");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "fenrir");
+		e.mon(1, "kuriboh", true);
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.ef.saltaRobo[1] >= 1, "el rival no se salta el robo");
+		fin();
+	}
+	{
+		caso("Gigantes: destruido en batalla: destruye todas las magias y trampas", "gigantes");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "summoned_skull");
+		e.mon(1, "gigantes");
+		e.colocar(0, "mirror_force");
+		e.colocar(1, "trap_hole");
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].libreMT() == 0 && e.d.l[1].libreMT() == 0, "quedan magias/trampas");
+		fin();
+	}
+	{
+		caso("Garuda the Wind Spirit: en la fase final del rival cambia la posicion de uno suyo boca arriba", "garuda_the_wind_spirit");
+		Escena e(F_PRINCIPAL2);
+		e.mon(1, "garuda_the_wind_spirit");
+		const int b = e.mon(0, "summoned_skull");
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		VERIFICA(e.d.l[0].m[(size_t)b].defensa, "no paso a defensa");
+		fin();
+	}
+	{
+		caso("Des Volstgalph: cada magia normal o rapida que resuelve: +200 ATK este turno", "des_volstgalph");
+		Escena e;
+		const int v = e.mon(0, "des_volstgalph");
+		const int k = e.mano(0, "pot_of_greed");
+		VERIFICA(e.activar(0, H(0, k)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.atkM(e.d.l[0].m[(size_t)v]) == 2400, "ATK %d (esperado 2400)", e.d.atkM(e.d.l[0].m[(size_t)v]));
+		fin();
+	}
+	{
+		caso("Axe of Despair: al ir del campo al cementerio, sacrificas 1 monstruo: vuelve encima del mazo", "axe_of_despair");
+		Escena e;
+		const int a = e.mon(0, "celtic_guardian");
+		e.mon(0, "kuriboh");
+		const int ax = mtArriba(e, 0, "axe_of_despair", e.d.l[0].m[(size_t)a].uid);
+		const int k = e.mano(1, "mystical_space_typhoon");
+		e.d.activo = 1;
+		VERIFICA(e.activar(1, H(1, k), { MT(0, ax) }), "MST no se activo");
+		e.pasa(0);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 0, "Axe no pregunto");
+		int kk = 0;
+		while (kk < (int)e.d.ef.preg.cands.size() && cartaEn(e.d, e.d.ef.preg.cands[(size_t)kk]) != "kuriboh") kk++;
+		e.elige(0, kk);
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mazo.back() == "axe_of_despair" && e.enCementerio(0, "kuriboh") == 1 && e.enCementerio(0, "axe_of_despair") == 0, "Axe no volvio al mazo");
+		fin();
+	}
+	{
+		caso("Horn of Light: al ir al cementerio, pagas 500: vuelve encima del mazo", "horn_of_light");
+		Escena e;
+		const int a = e.mon(0, "celtic_guardian");
+		const int h = mtArriba(e, 0, "horn_of_light", e.d.l[0].m[(size_t)a].uid);
+		const int k = e.mano(1, "mystical_space_typhoon");
+		e.d.activo = 1;
+		VERIFICA(e.activar(1, H(1, k), { MT(0, h) }), "MST no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mazo.back() == "horn_of_light" && e.d.l[0].lp == LP_INICIAL - 500, "Horn no volvio (LP %d)", e.d.l[0].lp);
+		fin();
+	}
+	{
+		caso("Celestial Sword - Eatos: al ir al cementerio, Guardian Eatos +500 por monstruo desterrado", "celestial_sword_eatos");
+		Escena e;
+		const int g = e.mon(0, "guardian_eatos");
+		const int c = mtArriba(e, 0, "celestial_sword_eatos", e.d.l[0].m[(size_t)g].uid);
+		e.d.l[1].desterrados = { "battle_ox", "celtic_guardian" };
+		const int k = e.mano(1, "mystical_space_typhoon");
+		e.d.activo = 1;
+		VERIFICA(e.activar(1, H(1, k), { MT(0, c) }), "MST no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.atkM(e.d.l[0].m[(size_t)g]) == 3500, "ATK %d (esperado 2500 + 1000)", e.d.atkM(e.d.l[0].m[(size_t)g]));
+		fin();
+	}
+	{
+		caso("Blast with Chain: destruida por un efecto estando equipada: destruye una carta del campo", "blast_with_chain");
+		Escena e;
+		const int a = e.mon(0, "celtic_guardian");
+		const int b = mtArriba(e, 0, "blast_with_chain", e.d.l[0].m[(size_t)a].uid);
+		e.mon(1, "summoned_skull");
+		const int k = e.mano(1, "mystical_space_typhoon");
+		e.d.activo = 1;
+		VERIFICA(e.activar(1, H(1, k), { MT(0, b) }), "MST no se activo");
+		e.pasa(0);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 0, "no pregunto");
+		int kk = 0;
+		while (kk < (int)e.d.ef.preg.cands.size() && cartaEn(e.d, e.d.ef.preg.cands[(size_t)kk]) != "summoned_skull") kk++;
+		e.elige(0, kk);
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 0, "Summoned Skull sigue");
+		fin();
+	}
+	{
+		caso("Dust Tornado: destruye una magia/trampa del rival y despues puedes colocar una de tu mano", "dust_tornado");
+		Escena e;
+		const int m = e.colocar(1, "mirror_force");
+		e.mano(0, "trap_hole");
+		const int dt = e.colocar(0, "dust_tornado");
+		VERIFICA(e.activar(0, MT(0, dt), { MT(1, m) }), "no se activo");
+		e.pasarTodo();
+		bool colocada = false;
+		for (const MagiaTrampa& k : e.d.l[0].mt) colocada |= k.id == "trap_hole" && k.bocaAbajo;
+		VERIFICA(e.d.l[1].libreMT() == 0 && colocada, "no destruyo o no coloco Trap Hole");
+		fin();
+	}
+	{
+		caso("Freed the Matchless General: en tu fase de robo, en vez de robar, un Guerrero de nivel 4 o menos del mazo", "freed_the_matchless_general");
+		Escena e;
+		e.d.activo = 1;
+		e.d.fase = F_FINAL;
+		e.mon(0, "freed_the_matchless_general");
+		e.d.l[0].mazo.insert(e.d.l[0].mazo.begin(), "amazoness_archer");
+		e.d.l[0].mano.clear();
+		const size_t mazo = e.d.l[0].mazo.size();
+		e.d.pasarTurno();
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mano.size() == 1 && e.d.l[0].mazo.size() == mazo - 1, "mano %d, mazo %d", (int)e.d.l[0].mano.size(), (int)e.d.l[0].mazo.size());
+		VERIFICA(!e.d.l[0].mano.empty() && guerreroFreed(e.d, e.d.l[0].mano[0]), "no busco un Guerrero (%s)", e.d.l[0].mano.empty() ? "-" : e.d.l[0].mano[0].c_str());
+		fin();
+	}
+	{
+		caso("Sorcerer of Dark Magic: al activarse una trampa, la niega y la destruye", "sorcerer_of_dark_magic");
+		Escena e(F_BATALLA);
+		const int s = e.mon(0, "sorcerer_of_dark_magic");
+		e.mon(1, "kuriboh");
+		const int mf = e.colocar(1, "mirror_force");
+		VERIFICA(atacar(e, s, 0), "no ataco");
+		VERIFICA(e.activar(1, MT(1, mf)), "Mirror Force no se activo");
+		VERIFICA(e.activar(0, M(0, s)), "Sorcerer no respondio");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)s].vacia() && e.enCementerio(1, "mirror_force") == 1, "Mirror Force no se nego");
+		fin();
+	}
+	{
+		caso("Element Saurus: con un TIERRA en el campo, el destruido en batalla no activa su efecto", "element_saurus");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "element_saurus");
+		e.mon(0, "celtic_guardian");   // (TIERRA)
+		e.mon(1, "sangan");
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].mano.empty(), "Sangan busco");
+		fin();
+	}
+	for (const char* id : { "shadowknight_archfiend", "terrorking_archfiend", "darkbishop_archfiend" }) {
+		caso("Archfiend del dado: elegido por una carta del rival, tira el dado: con su numero, niega y destruye la carta", id);
+		int negadas = 0, tiradas = 0;
+		for (uint32_t sem = 1; sem <= 24; sem++) {
+			Escena e;
+			e.d.ef.azar = Azar(mezclar(sem * 2654435761u, 0x77u));
+			e.d.activo = 1;
+			const int m = e.mon(0, id);
+			const int k = e.mano(1, "book_of_moon");
+			const size_t s0 = e.d.sucesos.size();
+			if (!e.activar(1, H(1, k), { M(0, m) })) continue;
+			e.pasarTodo();
+			int dado = -1;
+			for (size_t q = s0; q < e.d.sucesos.size(); q++)
+				if (e.d.sucesos[q].tipo == S_MODIFICA && e.d.sucesos[q].carta == "dado") dado = e.d.sucesos[q].valor;
+			const bool caraBuena = std::string(id) == "shadowknight_archfiend" ? dado == 3 : std::string(id) == "terrorking_archfiend" ? (dado == 2 || dado == 5)
+			                                                                                                                        : (dado == 1 || dado == 3 || dado == 6);
+			tiradas += dado > 0;
+			const bool negada = !e.d.l[0].m[(size_t)m].bocaAbajo;
+			negadas += negada;
+			VERIFICA(dado > 0 && negada == caraBuena, "%s: dado %d, negada %d", id, dado, (int)negada);
+		}
+		VERIFICA(tiradas > 0 && negadas > 0, "%s: nunca nego", id);
+		fin();
+	}
+}
+// (rama classic-motor2) segunda tanda de parciales
+static void tandaMotor2Parciales2()
+{
+	fprintf(stderr, "tanda motor2: parciales (2)\n");
+	{
+		caso("Multiplication of Ants: las fichas son Insecto, TIERRA, nivel 4", "multiplication_of_ants");
+		Escena e;
+		e.mon(0, "insect_knight");
+		const int k = e.mano(0, "multiplication_of_ants");
+		VERIFICA(e.activar(0, H(0, k), {}, {}, { M(0, 0) }), "no se activo");
+		e.pasarTodo();
+		int n = 0;
+		for (const Monstruo& m : e.d.l[0].m)
+			if (m.id == "multiplication_of_ants") n += razaEs(e.d, m.id, "Insecto") && nivelM(e.d, m) == 4 && atributoDe(e.d, m) == "TIERRA" && e.d.atkM(m) == 500;
+		VERIFICA(n == 2, "fichas correctas %d (esperado 2)", n);
+		fin();
+	}
+	{
+		caso("Physical Double: la ficha copia ATK, DEF, nivel, tipo y atributo del elegido", "physical_double");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		const int s = e.mon(1, "summoned_skull");
+		const int pd = e.colocar(0, "physical_double");
+		Jugada inv;   // (el rival invoca: la ventana para responder en su turno)
+		inv.tipo = J_INVOCAR;
+		inv.mano = e.mano(1, "battle_ox");
+		VERIFICA(e.d.aplicar(inv) && e.d.ef.preg.lado == 0, "no hubo ventana");
+		VERIFICA(e.activar(0, MT(0, pd), { M(1, s) }), "no se activo");
+		e.pasarTodo();
+		bool ok = false;
+		for (const Monstruo& m : e.d.l[0].m)
+			if (m.id == "physical_double") ok = e.d.atkM(m) == 2500 && nivelM(e.d, m) == 6 && razaEs(e.d, m.id, "Demonio") && atributoDe(e.d, m) == "OSCURIDAD";
+		VERIFICA(ok, "la ficha no copio todo");
+		fin();
+	}
+	{
+		caso("Re-Fusion: paga 800: una fusion del cementerio, equipada; si se destruye, el equipado se destierra", "re_fusion");
+		Escena e;
+		e.d.l[0].cementerio.push_back("flame_swordsman");
+		const int k = e.mano(0, "re_fusion");
+		VERIFICA(e.activar(0, H(0, k)), "no se activo");
+		e.pasarTodo();
+		int z = -1, zr = -1;
+		for (int q = 0; q < ZONAS; q++) {
+			if (e.d.l[0].m[(size_t)q].id == "flame_swordsman") z = q;
+			if (e.d.l[0].mt[(size_t)q].id == "re_fusion") zr = q;
+		}
+		VERIFICA(z >= 0 && zr >= 0 && e.d.l[0].mt[(size_t)zr].eqUid == e.d.l[0].m[(size_t)z].uid, "no quedo equipada");
+		if (zr >= 0) e.d.mtAlCementerio(0, zr);
+		VERIFICA(z >= 0 && e.d.l[0].m[(size_t)z].vacia() && e.d.l[0].desterrados.size() == 1, "el equipado no se destierro");
+		fin();
+	}
+	{
+		caso("De-Fusion: la fusion vuelve al mazo de fusion y sus materiales del cementerio se invocan", "de_fusion");
+		Escena e;
+		const int f = e.mon(0, "flame_swordsman");
+		e.d.l[0].cementerio = { "flame_manipulator", "masaki_the_legendary_swordsman" };
+		const int k = e.mano(0, "de_fusion");
+		VERIFICA(e.activar(0, H(0, k), { M(0, f) }), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].monstruos() == 2 && e.d.l[0].extra.size() == 1, "campo %d, extra %d", e.d.l[0].monstruos(), (int)e.d.l[0].extra.size());
+		fin();
+	}
+	{
+		caso("Collected Power: los equipos que no corresponden al nuevo monstruo se destruyen", "collected_power");
+		Escena e;
+		const int c = e.mon(0, "celtic_guardian");
+		const int b = e.mon(0, "baby_dragon");   // (Dragon: Legendary Sword no le corresponde)
+		mtArriba(e, 0, "legendary_sword", e.d.l[0].m[(size_t)c].uid);
+		mtArriba(e, 0, "axe_of_despair", e.d.l[0].m[(size_t)c].uid);
+		const int cp = e.colocar(0, "collected_power");
+		VERIFICA(e.activar(0, MT(0, cp), { M(0, b) }), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.enCementerio(0, "legendary_sword") == 1 && e.d.atkM(e.d.l[0].m[(size_t)b]) == 2200, "ATK %d", e.d.atkM(e.d.l[0].m[(size_t)b]));
+		fin();
+	}
+	{
+		caso("Falling Down: se destruye sin una carta Archfiend tuya; con una, en cada espera del rival pierdes 800", "falling_down");
+		Escena e;
+		const int o = e.mon(1, "summoned_skull");
+		const int k = e.mano(0, "falling_down");
+		VERIFICA(e.activar(0, H(0, k), { M(1, o) }), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 1 && e.enCementerio(0, "falling_down") == 1, "sin Archfiend no se destruyo");
+		Escena f;
+		f.mon(0, "terrorking_archfiend");
+		const int o2 = f.mon(1, "summoned_skull");
+		const int k2 = f.mano(0, "falling_down");
+		VERIFICA(f.activar(0, H(0, k2), { M(1, o2) }), "no se activo (con Archfiend)");
+		f.pasarTodo();
+		VERIFICA(f.d.l[0].monstruos() == 2, "no tomo el control");
+		f.d.fase = F_FINAL;
+		f.d.l[0].mano.clear();
+		const int lp = f.d.l[0].lp;
+		f.d.pasarTurno();
+		f.pasarTodo();
+		VERIFICA(f.d.l[0].lp == lp - 800, "LP %d (esperado %d)", f.d.l[0].lp, lp - 800);
+		fin();
+	}
+	{
+		caso("Jowls of Dark Demise: el monstruo tomado puede atacar directo", "jowls_of_dark_demise");
+		Escena e;
+		const int j = e.mon(0, "jowls_of_dark_demise", true, true);
+		e.d.l[0].m[(size_t)j].llegoEsteTurno = false;
+		e.mon(1, "summoned_skull");
+		e.mon(1, "celtic_guardian");
+		Jugada v;
+		v.tipo = J_VOLTEAR;
+		v.zona = j;
+		VERIFICA(e.d.aplicar(v), "no se volteo");
+		e.pasarTodo();
+		int z = -1;
+		for (int q = 0; q < ZONAS; q++)
+			if (e.d.l[0].m[(size_t)q].duenno == 1) z = q;
+		VERIFICA(z >= 0 && motorAtaqueDirecto(e.d, 0, z), "el tomado no ataca directo");
+		fin();
+	}
+	{
+		caso("Mysterious Guard: uno arriba del mazo y, con un Guerrero tuyo, otro a la mano", "mysterious_guard");
+		Escena e;
+		const int g = e.mon(0, "mysterious_guard", true, true);
+		e.d.l[0].m[(size_t)g].llegoEsteTurno = false;
+		e.mon(0, "celtic_guardian");
+		const int a = e.mon(1, "summoned_skull");
+		const int b = e.mon(1, "battle_ox");
+		Jugada v;
+		v.tipo = J_VOLTEAR;
+		v.zona = g;
+		VERIFICA(e.d.aplicar(v), "no se volteo");
+		e.pasa(1);
+		auto elegir = [&](const char* id) {
+			int k = 0;
+			while (k < (int)e.d.ef.preg.cands.size() && cartaEn(e.d, e.d.ef.preg.cands[(size_t)k]) != id) k++;
+			return e.elige(0, k);
+		};
+		VERIFICA(elegir("summoned_skull"), "no pregunto el primero");
+		VERIFICA(elegir("battle_ox"), "no pregunto el segundo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)a].vacia() && e.d.l[1].m[(size_t)b].vacia() && e.d.l[1].mazo.back() == "summoned_skull" && e.d.l[1].mano.size() == 1,
+		         "no volvieron (mazo arriba %s, mano %d)", e.d.l[1].mazo.back().c_str(), (int)e.d.l[1].mano.size());
+		fin();
+	}
+	{
+		caso("Big Eye: VOLTEO: ordenas las 5 de arriba de tu mazo", "big_eye");
+		Escena e;
+		e.d.l[0].mazo = { "a1", "a2", "a3", "a4", "a5", "a6" };   // (a6 arriba)
+		const int g = e.mon(0, "big_eye", true, true);
+		e.d.l[0].m[(size_t)g].llegoEsteTurno = false;
+		Jugada v;
+		v.tipo = J_VOLTEAR;
+		v.zona = g;
+		VERIFICA(e.d.aplicar(v), "no se volteo");
+		e.pasa(1);
+		auto elegir = [&](const char* id) {
+			int k = 0;
+			while (k < (int)e.d.ef.preg.cands.size() && cartaEn(e.d, e.d.ef.preg.cands[(size_t)k]) != id) k++;
+			return e.elige(0, k);
+		};
+		VERIFICA(elegir("a2") && elegir("a4") && elegir("a6") && elegir("a3"), "no pregunto el orden");
+		e.pasarTodo();
+		const std::vector<std::string> esperado = { "a1", "a5", "a3", "a6", "a4", "a2" };
+		VERIFICA(e.d.l[0].mazo == esperado, "orden del mazo distinto (arriba %s)", e.d.l[0].mazo.back().c_str());
+		fin();
+	}
+	{
+		caso("Dark Necrofear: destruida por el rival, en la fase final se equipa a uno suyo y tomas su control", "dark_necrofear");
+		Escena e;
+		e.d.activo = 1;
+		e.d.turno = 4;
+		e.mon(0, "dark_necrofear");
+		e.mon(1, "summoned_skull");
+		const int k = e.mano(1, "raigeki");
+		VERIFICA(e.activar(1, H(1, k)), "Raigeki no se activo");
+		e.pasarTodo();
+		e.d.fase = F_PRINCIPAL2;
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		e.pasarTodo();
+		bool tomado = false, equipada = false;
+		for (const Monstruo& m : e.d.l[0].m) tomado |= m.id == "summoned_skull";
+		for (const MagiaTrampa& c : e.d.l[0].mt) equipada |= c.id == "dark_necrofear" && c.eqUid > 0;
+		VERIFICA(tomado && equipada, "no tomo el control (%d) o no se equipo (%d)", (int)tomado, (int)equipada);
+		fin();
+	}
+	{
+		caso("Amazoness Archers: los del rival quedan en ataque, -500, y deben atacar este turno si pueden", "amazoness_archers");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "summoned_skull");
+		const int b = e.mon(0, "celtic_guardian", true);
+		e.mon(1, "amazoness_swords_woman");
+		const int ar = e.colocar(1, "amazoness_archers");
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		VERIFICA(e.activar(1, MT(1, ar)), "Archers no se activo");
+		e.pasarTodo();
+		Jugada f;
+		f.tipo = J_FASE;
+		VERIFICA(!e.d.l[0].m[(size_t)b].defensa && !e.d.aplicar(f), "la batalla termino sin que ataque Celtic Guardian");
+		VERIFICA(atacar(e, b, -1) || e.d.l[1].monstruos() > 0, "Celtic no pudo atacar");
+		fin();
+	}
+	{
+		caso("Dark Spirit of the Silent: niega el ataque y otro monstruo del rival ataca en su lugar", "dark_spirit_of_the_silent");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "summoned_skull");
+		const int b = e.mon(0, "kuriboh", true);
+		e.mon(1, "battle_ox");
+		const int ds = e.colocar(1, "dark_spirit_of_the_silent");
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		VERIFICA(e.activar(1, MT(1, ds)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)b].vacia() && e.d.l[1].monstruos() == 1, "Kuriboh no ataco en su lugar");
+		fin();
+	}
+	{
+		caso("Diabound Kernel (rapido): uno del rival pierde su ATK; se destierra y vuelve en la proxima fase de espera", "diabound_kernel");
+		Escena e;
+		const int k = e.mon(0, "diabound_kernel");
+		const int o = e.mon(1, "summoned_skull");
+		VERIFICA(e.activar(0, M(0, k), { M(1, o) }), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.atkM(e.d.l[1].m[(size_t)o]) == 2500 - 1800 && e.d.l[0].m[(size_t)k].vacia(), "ATK %d", e.d.atkM(e.d.l[1].m[(size_t)o]));
+		e.d.fase = F_FINAL;
+		e.d.l[0].mano.clear();
+		e.d.pasarTurno();
+		e.pasarTodo();
+		bool vuelve = false;
+		for (const Monstruo& m : e.d.l[0].m) vuelve |= m.id == "diabound_kernel";
+		VERIFICA(vuelve, "no volvio en la espera del turno siguiente");
+		fin();
+	}
+	{
+		caso("Deck Devastation Virus: lo que robe el rival con 1500 o menos ATK se destruye", "deck_devastation_virus");
+		Escena e;
+		e.mon(0, "summoned_skull");   // (OSCURIDAD 2500: el sacrificio)
+		const int v = e.colocar(0, "deck_devastation_virus");
+		VERIFICA(e.activar(0, MT(0, v), {}, {}, { M(0, 0) }), "no se activo");
+		e.pasarTodo();
+		e.d.l[1].mazo.push_back("kuriboh");
+		e.d.fase = F_FINAL;
+		e.d.l[0].mano.clear();
+		e.d.pasarTurno();
+		VERIFICA(e.enCementerio(1, "kuriboh") == 1, "Kuriboh robado no se destruyo");
+		fin();
+	}
+	{
+		caso("Spiral Spear Strike: Gaia the Dragon Champion hace danno perforante: robas 2 y descartas 1", "spiral_spear_strike");
+		Escena e(F_BATALLA);
+		const int g = e.mon(0, "gaia_the_dragon_champion");
+		mtArriba(e, 0, "spiral_spear_strike");
+		e.mon(1, "kuriboh", true);
+		const size_t mano = e.d.l[0].mano.size();
+		VERIFICA(atacar(e, g, 0), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mano.size() == mano + 1 && e.d.l[1].lp == LP_INICIAL - (2600 - 200), "mano %d, LP %d", (int)e.d.l[0].mano.size(), e.d.l[1].lp);
+		fin();
+	}
+	{
+		caso("Spell Vanishing: niega la magia y manda al cementerio las del mismo nombre de su mano y mazo", "spell_vanishing");
+		Escena e;
+		e.d.l[0].mazo.push_back("raigeki");
+		e.mano(0, "raigeki");
+		const int k = e.mano(0, "raigeki");
+		e.mon(1, "kuriboh");
+		const int sv = e.colocar(1, "spell_vanishing");
+		e.mano(1, "battle_ox");
+		e.mano(1, "celtic_guardian");
+		VERIFICA(e.activar(0, H(0, k)), "Raigeki no se activo");
+		VERIFICA(e.activar(1, MT(1, sv), {}, { 0, 1 }), "Spell Vanishing no respondio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 1 && e.enCementerio(0, "raigeki") == 3, "Raigekis en el cementerio %d", e.enCementerio(0, "raigeki"));
+		fin();
+	}
+	{
+		caso("Valkyrie Dritte: invocada, una Valkyrie del mazo a la mano (no otra Dritte)", "valkyrie_dritte");
+		Escena e;
+		e.d.l[0].mazo.push_back("valkyrie_zweite");
+		e.d.l[0].mazo.push_back("valkyrie_dritte");
+		const int k = e.mano(0, "valkyrie_dritte");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		VERIFICA(e.d.aplicar(j), "no invoco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mano.size() == 1 && e.d.l[0].mano[0] == "valkyrie_zweite", "no busco a Zweite");
+		fin();
+	}
+	{
+		caso("Valkyrie Zweite: despues del calculo, si combatio, una magia continua de tu cementerio a la mano", "valkyrie_zweite");
+		Escena e(F_BATALLA);
+		const int z = e.mon(0, "valkyrie_zweite");
+		e.mon(1, "kuriboh", true);
+		e.d.l[0].cementerio.push_back("spiritual_energy_settle_machine");
+		VERIFICA(atacar(e, z, 0), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mano.size() == 1 && e.d.l[0].mano[0] == "spiritual_energy_settle_machine", "no recupero la continua");
+		fin();
+	}
+	{
+		caso("Guardian Eatos: manda un equipo suyo al cementerio: destierra hasta 3 del cementerio rival, +500 por cada uno", "guardian_eatos");
+		Escena e;
+		const int g = e.mon(0, "guardian_eatos");
+		mtArriba(e, 0, "celestial_sword_eatos", e.d.l[0].m[(size_t)g].uid);
+		e.d.l[1].cementerio = { "battle_ox", "celtic_guardian", "kuriboh", "dark_magician" };
+		VERIFICA(e.activar(0, M(0, g)), "no se activo");
+		e.pasarTodo();
+		// (la espada se fue: +500 por desterrado (Celestial Sword) y +500 x3 este turno)
+		VERIFICA(e.d.l[1].desterrados.size() == 3 && e.d.l[1].cementerio.size() == 1, "desterrados %d", (int)e.d.l[1].desterrados.size());
+		fin();
+	}
+	{
+		caso("Temple of the Kings: Serket y el templo al cementerio: invocas un monstruo de tu mano, mazo o mazo de fusion", "temple_of_the_kings");
+		Escena e;
+		const int tz = mtArriba(e, 0, "temple_of_the_kings");
+		e.mon(0, "mystical_beast_of_serket");
+		e.d.l[0].extra.push_back("flame_swordsman");
+		VERIFICA(e.activar(0, MT(0, tz)), "no se activo");
+		e.pasa(1);
+		int k = 0;
+		while (k < (int)e.d.ef.preg.cands.size() && cartaEn(e.d, e.d.ef.preg.cands[(size_t)k]) != "flame_swordsman") k++;
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.elige(0, k), "no pregunto");
+		e.pasarTodo();
+		VERIFICA(hayEnCampo(e, 0, "flame_swordsman") && e.enCementerio(0, "temple_of_the_kings") == 1 && e.enCementerio(0, "mystical_beast_of_serket") == 1, "no invoco (%d %d %d)", (int)hayEnCampo(e, 0, "flame_swordsman"), e.enCementerio(0, "temple_of_the_kings"), e.enCementerio(0, "mystical_beast_of_serket"));
+		fin();
+	}
+	{
+		caso("Sword of Dragon's Soul: el Dragon que combatio con el equipado se destruye al final de la batalla", "sword_of_dragon_s_soul");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "celtic_guardian");
+		mtArriba(e, 0, "sword_of_dragon_s_soul", e.d.l[0].m[(size_t)a].uid);
+		e.mon(1, "koumori_dragon", true);   // (Dragon 1500/1200)
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		e.pasarTodo();
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].monstruos() == 0, "el Dragon sigue");
+		fin();
+	}
+	{
+		caso("Zombie Tiger equipado: el equipado destruye uno en batalla: el rival descarta 1 al azar", "zombie_tiger");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "decayed_commander");
+		mtArriba(e, 0, "zombie_tiger", e.d.l[0].m[(size_t)a].uid);
+		e.mon(1, "kuriboh", true);
+		e.mano(1, "battle_ox");
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].mano.empty(), "no descarto");
+		fin();
+	}
+}
+static void tandaMotor2Goblin()
+{
+	{
+		caso("Second Goblin equipado: su monstruo cambia de posicion 1 vez por turno aunque ya cambio", "second_goblin");
+		Escena e;
+		const int o = e.mon(0, "giant_orc");
+		mtArriba(e, 0, "second_goblin", e.d.l[0].m[(size_t)o].uid);
+		e.d.l[0].m[(size_t)o].cambioPosicion = true;
+		Jugada p;
+		p.tipo = J_POSICION;
+		p.zona = o;
+		VERIFICA(e.d.aplicar(p) && e.d.l[0].m[(size_t)o].defensa, "no cambio de posicion");
+		VERIFICA(!e.d.aplicar(p), "cambio dos veces");
+		fin();
+	}
+}
+// (rama classic-motor2) Orichalcos Sword of Sealing y otras aproximaciones del motor
+static void tandaMotor2Extras()
+{
+	fprintf(stderr, "tanda motor2: Orichalcos Sword of Sealing y otras\n");
+	{
+		caso("Orichalcos Sword of Sealing: con campo, da a un monstruo de efecto tuyo: descarta 1 y destruye una carta boca arriba", "orichalcos_sword_of_sealing");
+		Escena e;
+		const int o = e.mon(1, "summoned_skull");
+		const int s = e.mon(0, "sangan");
+		e.d.l[0].campo = MagiaTrampa{ "umi", false };
+		e.d.l[0].campo.uid = e.d.nuevoUid();
+		const int sw = mtArriba(e, 0, "orichalcos_sword_of_sealing", e.d.l[1].m[(size_t)o].uid);
+		e.mano(0, "battle_ox");
+		VERIFICA(e.activar(0, MT(0, sw), { M(0, s) }), "no dio el efecto");
+		e.pasarTodo();
+		VERIFICA(oricalcoDado(e.d, 0), "Sangan no recibio el efecto");
+		const int obj = mtArriba(e, 1, "swords_of_revealing_light");
+		VERIFICA(e.activar(0, MT(0, sw), { MT(1, obj) }), "no destruyo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].mt[(size_t)obj].vacia() && e.enCementerio(0, "battle_ox") == 1, "Swords siguen o no descarto");
+		VERIFICA(!e.activar(0, MT(0, sw), { M(1, o) }), "se uso dos veces en el turno");
+		fin();
+	}
+	{
+		caso("Blue-Eyes Shining Dragon: al elegirlo un efecto, lo niega", "blue_eyes_shining_dragon");
+		Escena e;
+		e.d.activo = 1;
+		const int b = e.mon(0, "blue_eyes_shining_dragon");
+		const int k = e.mano(1, "book_of_moon");
+		VERIFICA(e.activar(1, H(1, k), { M(0, b) }), "Book of Moon no se activo");
+		VERIFICA(e.activar(0, M(0, b)), "no respondio");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)b].bocaAbajo, "quedo boca abajo");
+		fin();
+	}
+	{
+		caso("Decayed Commander: danno de batalla directo: el rival descarta 1 al azar", "decayed_commander");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "decayed_commander");
+		e.mano(1, "battle_ox");
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].mano.empty(), "no descarto");
+		fin();
+	}
+	{
+		caso("Element Dragon: con un VIENTO, destruye uno en batalla y ataca otra vez", "element_dragon");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "element_dragon");
+		e.mon(0, "harpie_lady");   // (VIENTO)
+		e.mon(1, "kuriboh");
+		VERIFICA(atacar(e, a, 0), "no ataco");
+		e.pasarTodo();
+		VERIFICA(e.d.puedeAtacar(0, a), "no puede atacar otra vez");
+		fin();
+	}
+	for (const char* id : { "desrook_archfiend", "infernalqueen_archfiend", "vilepawn_archfiend" }) {
+		caso("Archfiend del dado (Desrook 3, Infernalqueen 2/5, Vilepawn 3): niega y destruye la carta del rival", id);
+		int negadas = 0;
+		for (uint32_t sem = 1; sem <= 30; sem++) {
+			Escena e;
+			e.d.ef.azar = Azar(mezclar(sem * 2654435761u, 0x91u));
+			e.d.activo = 1;
+			const int m = e.mon(0, id);
+			const int k = e.mano(1, "book_of_moon");
+			const size_t s0 = e.d.sucesos.size();
+			if (!e.activar(1, H(1, k), { M(0, m) })) continue;
+			e.pasarTodo();
+			int dado = -1;
+			for (size_t q = s0; q < e.d.sucesos.size(); q++)
+				if (e.d.sucesos[q].tipo == S_MODIFICA && e.d.sucesos[q].carta == "dado") dado = e.d.sucesos[q].valor;
+			const bool buena = std::string(id) == "infernalqueen_archfiend" ? (dado == 2 || dado == 5) : dado == 3;
+			const bool negada = !e.d.l[0].m[(size_t)m].bocaAbajo;
+			negadas += negada;
+			VERIFICA(dado > 0 && negada == buena, "%s: dado %d, negada %d", id, dado, (int)negada);
+		}
+		VERIFICA(negadas > 0, "%s: nunca nego", id);
+		fin();
+	}
+	{
+		caso("Vilepawn Archfiend: el rival no puede atacar a tus otros Archfiend", "vilepawn_archfiend");
+		Escena e;
+		e.mon(0, "vilepawn_archfiend");
+		const int t2 = e.mon(0, "terrorking_archfiend");
+		VERIFICA(!motorAtacable(e.d, 0, t2), "se puede atacar a Terrorking");
+		fin();
+	}
+	{
+		caso("Rare Metalmorph: niega una vez una magia que elige a la Maquina equipada", "rare_metalmorph");
+		Escena e;
+		e.d.activo = 1;
+		const int m = e.mon(0, "oni_tank_t_34");
+		mtArriba(e, 0, "rare_metalmorph", e.d.l[0].m[(size_t)m].uid);
+		const int k = e.mano(1, "book_of_moon");
+		VERIFICA(e.activar(1, H(1, k), { M(0, m) }), "Book of Moon no se activo");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].m[(size_t)m].bocaAbajo, "no se nego");
+		const int k2 = e.mano(1, "book_of_moon");
+		VERIFICA(e.activar(1, H(1, k2), { M(0, m) }), "el segundo no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].m[(size_t)m].bocaAbajo, "nego dos veces");
+		fin();
+	}
+}
+// (rama classic-elecciones) lo que antes elegia el motor por el jugador: ahora se le pregunta a su duenno
+// Ojama King llega al campo con su disparo pendiente (Escena::mon los borra)
+static int ojamaConDisparo(Escena& e, int lado)
+{
+	const int z = e.d.invocarEspecial(lado, "ojama_king", false);
+	if (z < 0) return z;
+	e.d.l[(size_t)lado].m[(size_t)z].llegoEsteTurno = false;
+	e.d.ef.ventanaTras = Ventana{};
+	motorVentana(e.d, Ventana{ V_DISPARO, lado, -1, 0, {} });
+	return z;
+}
+// pasan las ventanas de respuesta hasta que haya una eleccion (o nada)
+static void pasarRespuestas(Escena& e)
+{
+	for (int g = 0; g < 20 && e.d.ef.preg.tipo == P_RESPUESTA; g++) e.pasa(e.d.ef.preg.lado);
+}
+static int candZona(const Escena& e, int lado, int z)
+{
+	for (int k = 0; k < (int)e.d.ef.preg.cands.size(); k++)
+		if (e.d.ef.preg.cands[(size_t)k] == Lugar{ lado, EN_MONSTRUO, z }) return k;
+	return -1;
+}
+static void tandaElecciones()
+{
+	fprintf(stderr, "tanda elecciones: el jugador elige (Ojama King, Arcana Knight Joker, Orichalcos Sword of Sealing, Garuda)\n");
+	{
+		caso("Ojama King: su duenno elige las 3 zonas del rival (la IA, primero las vacias)", "ojama_king");
+		Escena e;
+		e.mon(1, "battle_ox");   // (zona 0 del rival ocupada)
+		const int o = ojamaConDisparo(e, 0);
+		pasarRespuestas(e);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 0 && e.d.ef.preg.texto == "ef.elegir.bloquear" && e.d.ef.preg.cands.size() == 5 &&
+		             e.d.ef.preg.faltan == 3,
+		         "no pregunto las zonas (tipo %d, %d candidatos)", e.d.ef.preg.tipo, (int)e.d.ef.preg.cands.size());
+		for (int z : { 4, 0, 2 }) VERIFICA(e.elige(0, candZona(e, 1, z)), "no se pudo elegir la zona %d", z);
+		const auto& b = e.d.l[1].bloqueada;
+		VERIFICA(b[4] && b[0] && b[2] && !b[1] && !b[3], "zonas bloqueadas %d%d%d%d%d (esperado 10101)", b[0], b[1], b[2], b[3], b[4]);
+		VERIFICA(e.d.ef.preg.tipo == P_NADA && e.d.ef.cadena.empty(), "quedo una pregunta o la cadena");
+		e.d.alCementerio(0, o);
+		VERIFICA(!b[0] && !b[2] && !b[4], "las zonas siguen bloqueadas");
+		// la IA: elige sola, primero las vacias (como antes)
+		Escena f;
+		f.mon(0, "battle_ox");
+		ojamaConDisparo(f, 1);
+		pasarRespuestas(f);
+		for (int g = 0; g < 5 && f.d.ef.preg.tipo == P_ELEGIR && f.d.ef.preg.lado == 1; g++) f.elige(1, elegirIA(f.d, 1));
+		const auto& c = f.d.l[0].bloqueada;
+		VERIFICA(!c[0] && c[1] && c[2] && c[3] && !c[4], "la IA bloqueo %d%d%d%d%d (esperado 01110)", c[0], c[1], c[2], c[3], c[4]);
+		fin();
+	}
+	{
+		caso("Arcana Knight Joker: su duenno elige que carta del mismo tipo descarta", "arcana_knight_joker");
+		Escena e;
+		e.d.activo = 1;
+		const int a = e.mon(0, "arcana_knight_joker");
+		e.mano(0, "pot_of_greed");
+		e.mano(0, "battle_ox");
+		e.mano(0, "monster_reborn");
+		const int k = e.mano(1, "book_of_moon");
+		VERIFICA(e.activar(1, H(1, k), { M(0, a) }), "Book of Moon no se activo");
+		VERIFICA(e.activar(0, M(0, a)), "Arcana Knight Joker no respondio");
+		pasarRespuestas(e);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 0 && e.d.ef.preg.cands.size() == 2, "no pregunto el descarte (tipo %d, %d candidatos; esperado 2 magias)",
+		         e.d.ef.preg.tipo, (int)e.d.ef.preg.cands.size());
+		VERIFICA(indiceCand(e, "battle_ox") < 0, "ofrecio un monstruo (lo que lo elige es una magia)");
+		VERIFICA(e.elige(0, indiceCand(e, "monster_reborn")), "no se pudo elegir Monster Reborn");
+		e.pasarTodo();
+		VERIFICA(e.enCementerio(0, "monster_reborn") == 1 && enMano(e, 0, "pot_of_greed") && enMano(e, 0, "battle_ox"), "descarto otra carta");
+		VERIFICA(!e.d.l[0].m[(size_t)a].bocaAbajo, "no se nego Book of Moon");
+		fin();
+	}
+	{
+		caso("Orichalcos Sword of Sealing: su duenno elige la carta que manda al cementerio", "orichalcos_sword_of_sealing");
+		Escena e;
+		const int o = e.mon(1, "summoned_skull");
+		const int s = e.mon(0, "sangan");
+		e.d.l[0].campo = MagiaTrampa{ "umi", false };
+		e.d.l[0].campo.uid = e.d.nuevoUid();
+		const int sw = mtArriba(e, 0, "orichalcos_sword_of_sealing", e.d.l[1].m[(size_t)o].uid);
+		e.mano(0, "battle_ox");
+		e.mano(0, "pot_of_greed");
+		VERIFICA(e.activar(0, MT(0, sw), { M(0, s) }), "no dio el efecto");
+		e.pasarTodo();
+		const int obj = mtArriba(e, 1, "swords_of_revealing_light");
+		VERIFICA(e.activar(0, MT(0, sw), { MT(1, obj) }), "no se activo para destruir");
+		VERIFICA(e.d.l[0].mano.size() == 2, "descarto al activar (antes de elegir)");
+		pasarRespuestas(e);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 0 && e.d.ef.preg.cands.size() == 2, "no pregunto el descarte (tipo %d, %d candidatos)",
+		         e.d.ef.preg.tipo, (int)e.d.ef.preg.cands.size());
+		VERIFICA(e.elige(0, indiceCand(e, "pot_of_greed")), "no se pudo elegir Pot of Greed");
+		e.pasarTodo();
+		VERIFICA(e.enCementerio(0, "pot_of_greed") == 1 && enMano(e, 0, "battle_ox"), "mando otra carta al cementerio");
+		VERIFICA(e.d.l[1].mt[(size_t)obj].vacia(), "Swords of Revealing Light sigue");
+		fin();
+	}
+	{
+		caso("Garuda the Wind Spirit: su duenno elige el monstruo del rival que cambia de posicion", "garuda_the_wind_spirit");
+		Escena e(F_PRINCIPAL2);
+		e.d.activo = 1;
+		e.mon(0, "garuda_the_wind_spirit");
+		const int sk = e.mon(1, "summoned_skull");
+		const int ce = e.mon(1, "celtic_guardian");
+		Jugada f;
+		f.tipo = J_FASE;
+		e.d.aplicar(f);
+		pasarRespuestas(e);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 0 && e.d.ef.preg.cands.size() == 2, "no pregunto el objetivo (tipo %d, %d candidatos)",
+		         e.d.ef.preg.tipo, (int)e.d.ef.preg.cands.size());
+		VERIFICA(e.elige(0, candZona(e, 1, ce)), "no se pudo elegir Celtic Guardian");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)ce].defensa && !e.d.l[1].m[(size_t)sk].defensa, "cambio otro (Celtic %d, Skull %d)", e.d.l[1].m[(size_t)ce].defensa,
+		         e.d.l[1].m[(size_t)sk].defensa);
+		fin();
+	}
+}
+
+// ---- control final: un caso a mano para cada carta que la certificacion dejaba SIN PRUEBA (su condicion exacta y su
+// resultado segun el texto; las de azar con semillas fijas, comprobando el rango y las reglas de repeticion)
+// el lado pasa (o elige el primero) hasta que tiene una ventana de respuesta donde puede activar f, y la activa
+static bool responderCon(Escena& e, int lado, const Lugar& f, std::vector<Lugar> objs = {}, std::vector<int> desc = {},
+                         std::vector<Lugar> costes = { Lugar{ -9, 0, 0 } })
+{
+	for (int g = 0; g < 40 && e.d.ef.preg.tipo != P_NADA; g++) {
+		if (e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == lado)
+			for (const Lugar& a : activables(e.d, lado, true))
+				if (a == f) return e.activar(lado, f, objs, desc, costes);
+		Jugada j;
+		j.tipo = e.d.ef.preg.tipo == P_ELEGIR ? J_ELEGIR : J_PASAR;
+		j.objetivo = 0;
+		e.d.aplicar(j);
+	}
+	return false;
+}
+// el valor del n-esimo suceso S_MODIFICA con esa carta desde s0 (-99: ninguno)
+// lo mismo, pasando de fase el del turno hasta el final de su turno (las ventanas de respuesta de esas fases)
+static bool responderEnTurno(Escena& e, int lado, const Lugar& f, std::vector<Lugar> objs = {})
+{
+	const int turno = e.d.turno;
+	for (int g = 0; g < 8 && e.d.turno == turno && e.d.ganador < 0; g++) {
+		if (responderCon(e, lado, f, objs)) return true;
+		Jugada fz;
+		fz.tipo = J_FASE;
+		e.d.aplicar(fz);
+	}
+	return false;
+}
+static int modifica(const Escena& e, size_t s0, const char* carta, int n = 1)
+{
+	for (size_t q = s0; q < e.d.sucesos.size(); q++)
+		if (e.d.sucesos[q].tipo == S_MODIFICA && e.d.sucesos[q].carta == carta && --n == 0) return e.d.sucesos[q].valor;
+	return -99;
+}
+static bool revelo(const Escena& e, size_t s0, int lado, int donde, int i)
+{
+	for (size_t q = s0; q < e.d.sucesos.size(); q++) {
+		const Suceso& s = e.d.sucesos[q];
+		if (s.tipo == S_REVELA && s.lado == lado && s.zona2 == donde && (i < 0 || s.zona == i)) return true;
+	}
+	return false;
+}
+static Azar semilla(uint32_t sem, uint32_t sal) { return Azar(mezclar(sem * 2654435761u, sal)); }
+static void tandaControlFinal()
+{
+	fprintf(stderr, "tanda control final: las cartas sin prueba de la certificacion\n");
+	{
+		caso("Centrifugal Field: una fusion destruida por un efecto: su duenno invoca un material suyo de su cementerio", "centrifugal_field");
+		Escena e;
+		e.d.activo = 1;
+		e.d.l[0].campo = MagiaTrampa{ "centrifugal_field", false };
+		e.d.l[0].campo.uid = e.d.nuevoUid();
+		e.mon(0, "flame_swordsman");
+		e.d.l[0].cementerio = { "battle_ox", "masaki_the_legendary_swordsman" };
+		const int k = e.mano(1, "raigeki");
+		VERIFICA(e.activar(1, H(1, k)), "Raigeki no se activo");
+		e.pasarTodo();
+		VERIFICA(e.enCementerio(0, "flame_swordsman") == 1 && hayEnCampo(e, 0, "masaki_the_legendary_swordsman") && e.enCementerio(0, "battle_ox") == 1,
+		         "Flame Swordsman en el cementerio %d, Masaki en el campo %d", e.enCementerio(0, "flame_swordsman"), (int)hayEnCampo(e, 0, "masaki_the_legendary_swordsman"));
+		Escena f(F_BATALLA);   // (destruida en batalla: no)
+		f.d.l[1].campo = MagiaTrampa{ "centrifugal_field", false };
+		f.d.l[1].campo.uid = f.d.nuevoUid();
+		const int o = f.mon(1, "flame_swordsman");
+		f.d.l[1].cementerio = { "masaki_the_legendary_swordsman" };
+		const int a = f.mon(0, "blue_eyes");
+		VERIFICA(atacar(f, a, o), "no ataco");
+		f.pasarTodo();
+		VERIFICA(f.enCementerio(1, "flame_swordsman") == 1 && !hayEnCampo(f, 1, "masaki_the_legendary_swordsman"), "invoco tras una destruccion en batalla");
+		fin();
+	}
+	{
+		caso("Combination Attack: el que ya ataco y lleva una union: la union vuelve en ataque y el monstruo ataca otra vez", "combination_attack");
+		Escena e(F_BATALLA);
+		const int x = e.mon(0, "x_head_cannon");
+		mtArriba(e, 0, "y_dragon_head", e.d.l[0].m[(size_t)x].uid);
+		const int k = e.mano(0, "combination_attack");
+		VERIFICA(!e.activar(0, H(0, k)), "se activo sin que el equipado hubiera atacado");
+		e.d.l[0].m[(size_t)x].ataco = true;
+		VERIFICA(e.activar(0, H(0, k)), "no se activo");
+		e.pasarTodo();
+		const int y = buscarZona(e, 0, "y_dragon_head");
+		VERIFICA(y >= 0 && !e.d.l[0].m[(size_t)y].bocaAbajo && !e.d.l[0].m[(size_t)y].defensa && buscarZonaMT(e, 0, "y_dragon_head") < 0, "la union no volvio en ataque");
+		VERIFICA(e.d.puedeAtacar(0, x), "X-Head Cannon no puede atacar otra vez");
+		fin();
+	}
+	{
+		caso("Convulsion of Nature: con ella boca arriba, la carta de arriba de cada mazo esta a la vista", "convulsion_of_nature");
+		Escena e;
+		VERIFICA(usar(e, "convulsion_of_nature"), "no se activo");
+		size_t s0 = e.d.sucesos.size();
+		e.d.robarEfecto(0);
+		VERIFICA(revelo(e, s0, 0, EN_MAZO, (int)e.d.l[0].mazo.size() - 1) && revelo(e, s0, 1, EN_MAZO, (int)e.d.l[1].mazo.size() - 1), "no se ve la de arriba de los dos mazos");
+		const int z = buscarZonaMT(e, 0, "convulsion_of_nature");
+		if (z >= 0) e.d.mtAlCementerio(0, z);
+		s0 = e.d.sucesos.size();
+		e.d.robarEfecto(0);
+		VERIFICA(!revelo(e, s0, 0, EN_MAZO, -1) && !revelo(e, s0, 1, EN_MAZO, -1), "sin ella se sigue viendo el mazo");
+		fin();
+	}
+	{
+		caso("Covering Fire: en el paso de danno, el tuyo atacado gana el ATK de otro tuyo boca arriba (solo en ese paso)", "covering_fire");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		const int a = e.mon(1, "battle_ox");          // 1700
+		const int c = e.mon(0, "celtic_guardian");    // 1400 + 2500 = 3900
+		const int s = e.mon(0, "summoned_skull");
+		const int cf = e.colocar(0, "covering_fire");
+		VERIFICA(atacar(e, a, c), "no ataco");
+		VERIFICA(responderCon(e, 0, MT(0, cf), { M(0, s) }), "Covering Fire no se ofrecio en el paso de danno");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].m[(size_t)a].vacia() && !e.d.l[0].m[(size_t)c].vacia() && e.d.l[1].lp == LP_INICIAL - 2200 && e.d.l[0].lp == LP_INICIAL,
+		         "Battle Ox sigue %d, LP %d/%d", (int)!e.d.l[1].m[(size_t)a].vacia(), e.d.l[0].lp, e.d.l[1].lp);
+		VERIFICA(e.d.atkM(e.d.l[0].m[(size_t)c]) == 1400, "el bono sigue despues del paso de danno: %d", e.d.atkM(e.d.l[0].m[(size_t)c]));
+		fin();
+	}
+	{
+		caso("Dark Sage: Time Wizard acierta con Dark Magician: lo sacrifica, Dark Sage de la mano y una magia del mazo", "dark_sage");
+		int sabios = 0, fallos2 = 0;
+		for (uint32_t sem = 1; sem <= 30; sem++) {
+			Escena e;
+			e.d.ef.azar = semilla(sem, 0x5Au);
+			const int w = e.mon(0, "time_wizard");
+			e.mon(0, "dark_magician");
+			e.mano(0, "dark_sage");
+			e.d.l[0].mazo.push_back("raigeki");
+			e.mon(1, "battle_ox");
+			if (!e.activar(0, M(0, w))) {
+				VERIFICA(false, "Time Wizard no se activo");
+				break;
+			}
+			e.pasarTodo();   // (canta cara)
+			if (e.d.l[1].monstruos() == 0) {
+				sabios++;
+				VERIFICA(hayEnCampo(e, 0, "dark_sage") && e.enCementerio(0, "dark_magician") == 1 && enMano(e, 0, "raigeki") && !enMano(e, 0, "dark_sage"),
+				         "semilla %u: acerto pero Dark Sage %d, DM al cementerio %d, magia a la mano %d", sem, (int)hayEnCampo(e, 0, "dark_sage"),
+				         e.enCementerio(0, "dark_magician"), (int)enMano(e, 0, "raigeki"));
+			} else {
+				fallos2++;
+				VERIFICA(!hayEnCampo(e, 0, "dark_sage") && enMano(e, 0, "dark_sage"), "semilla %u: fallo y aun asi llego Dark Sage", sem);
+			}
+		}
+		VERIFICA(sabios > 0 && fallos2 > 0, "aciertos %d, fallos %d", sabios, fallos2);
+		fin();
+	}
+	{
+		caso("Dice Re-Roll: este turno, la primera tirada que no te conviene se repite una vez (1 a 6)", "dice_re_roll");
+		int repetidas = 0, quedan = 0;
+		for (uint32_t sem = 1; sem <= 40; sem++) {
+			Escena e;
+			e.d.ef.azar = semilla(sem, 0x33u);
+			VERIFICA(usarColocada(e, 0, "dice_re_roll"), "no se activo");
+			Azar c = e.d.ef.azar;
+			const int primero = 1 + c.hasta(6);
+			const size_t s0 = e.d.sucesos.size();
+			const int r = tirarDado(e.d, 1, true);   // (tira el rival: le conviene alto)
+			const int rep = modifica(e, s0, "dice_re_roll");
+			VERIFICA(r >= 1 && r <= 6, "dado %d", r);
+			VERIFICA((rep != -99) == (primero >= 4), "semilla %u: primero %d, repetida %d", sem, primero, rep);
+			if (rep != -99) {
+				repetidas++;
+				VERIFICA(rep == r, "la repetida %d no es el resultado %d", rep, r);
+				const size_t s1 = e.d.sucesos.size();
+				tirarDado(e.d, 1, true);
+				VERIFICA(modifica(e, s1, "dice_re_roll") == -99, "se repitio dos veces en el turno");
+			} else
+				quedan++;
+		}
+		VERIFICA(repetidas > 0 && quedan > 0, "repetidas %d, sin repetir %d", repetidas, quedan);
+		fin();
+	}
+	{
+		caso("Dora of Fate: en el turno del rival, uno suyo; en tu turno invocas normal uno de 1 nivel menos: nivel x 500", "dora_of_fate");
+		for (int nivel3 = 0; nivel3 < 2; nivel3++) {
+			Escena e;
+			e.d.activo = 1;
+			const int dz = e.colocar(0, "dora_of_fate");
+			VERIFICA(invocar(e, e.mano(1, "battle_ox")), "el rival no invoco");   // (nivel 4)
+			const int o = buscarZona(e, 1, "battle_ox");
+			VERIFICA(responderCon(e, 0, MT(0, dz), { M(1, o) }), "Dora of Fate no se ofrecio");
+			e.pasarTodo();
+			e.d.turno++;
+			e.d.activo = 0;
+			e.d.fase = F_PRINCIPAL1;
+			VERIFICA(invocar(e, e.mano(0, nivel3 ? "silver_fang" : "celtic_guardian")), "no invoco");
+			e.pasarTodo();
+			VERIFICA(e.d.l[1].lp == LP_INICIAL - (nivel3 ? 2000 : 0), "con nivel %d: LP del rival %d", nivel3 ? 3 : 4, e.d.l[1].lp);
+		}
+		Escena f;   // (en tu turno no)
+		f.mon(1, "battle_ox");
+		const int dz = f.colocar(0, "dora_of_fate");
+		VERIFICA(!f.activar(0, MT(0, dz), { M(1, 0) }), "se activo en tu turno");
+		fin();
+	}
+	{
+		caso("Dramatic Rescue: el rival elige a tu Amazoness: vuelve a la mano y otro monstruo de tu mano se invoca", "dramatic_rescue");
+		Escena e;
+		e.d.activo = 1;
+		const int a = e.mon(0, "amazoness_swords_woman");
+		e.mano(0, "battle_ox");
+		const int dr = e.colocar(0, "dramatic_rescue");
+		const int k = e.mano(1, "book_of_moon");
+		VERIFICA(e.activar(1, H(1, k), { M(0, a) }), "Book of Moon no se activo");
+		VERIFICA(responderCon(e, 0, MT(0, dr)), "Dramatic Rescue no se ofrecio");
+		e.pasarTodo();
+		VERIFICA(enMano(e, 0, "amazoness_swords_woman") && hayEnCampo(e, 0, "battle_ox") && !enMano(e, 0, "battle_ox"), "Amazoness en la mano %d, Battle Ox en el campo %d",
+		         (int)enMano(e, 0, "amazoness_swords_woman"), (int)hayEnCampo(e, 0, "battle_ox"));
+		Escena f;   // (con otro monstruo elegido: no)
+		f.d.activo = 1;
+		const int b = f.mon(0, "celtic_guardian");
+		f.mano(0, "battle_ox");
+		const int dr2 = f.colocar(0, "dramatic_rescue");
+		VERIFICA(f.activar(1, H(1, f.mano(1, "book_of_moon")), { M(0, b) }), "Book of Moon no se activo");
+		VERIFICA(!responderCon(f, 0, MT(0, dr2)), "se ofrecio sin un Amazoness elegido");
+		fin();
+	}
+	{
+		caso("Driving Snow: una trampa tuya destruida por un efecto del rival: destruye una magia/trampa", "driving_snow");
+		Escena e;
+		e.d.activo = 1;
+		const int mf = e.colocar(0, "mirror_force");
+		const int ds = e.colocar(0, "driving_snow");
+		const int sw = mtArriba(e, 1, "swords_of_revealing_light");
+		VERIFICA(motivoNoActivar(e.d, 0, MT(0, ds), true) != "", "se podia activar sin perder una trampa");
+		const int k = e.mano(1, "mystical_space_typhoon");
+		VERIFICA(e.activar(1, H(1, k), { MT(0, mf) }), "MST no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mt[(size_t)mf].vacia(), "Mirror Force sigue");
+		VERIFICA(invocar(e, e.mano(1, "battle_ox")), "el rival no invoco");
+		VERIFICA(responderCon(e, 0, MT(0, ds), { MT(1, sw) }), "Driving Snow no se ofrecio");
+		e.pasarTodo();
+		VERIFICA(e.d.l[1].mt[(size_t)sw].vacia(), "Swords siguen");
+		fin();
+	}
+	{
+		caso("Fairy Guardian: sacrificalo: una magia tuya que el rival mando al cementerio este turno vuelve al fondo del mazo", "fairy_guardian");
+		Escena e;
+		const int fg = e.mon(0, "fairy_guardian");
+		const int sw = mtArriba(e, 0, "swords_of_revealing_light");
+		const int mst = e.colocar(1, "mystical_space_typhoon");
+		VERIFICA(!e.activar(0, M(0, fg)), "se activo sin magia perdida");
+		VERIFICA(invocar(e, e.mano(0, "battle_ox")), "no invoco");
+		VERIFICA(responderCon(e, 1, MT(1, mst), { MT(0, sw) }), "el rival no pudo responder con MST");
+		e.pasarTodo();
+		VERIFICA(e.enCementerio(0, "swords_of_revealing_light") == 1, "Swords no fueron al cementerio");
+		VERIFICA(e.activar(0, M(0, fg)), "Fairy Guardian no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mazo.front() == "swords_of_revealing_light" && e.enCementerio(0, "swords_of_revealing_light") == 0 && e.enCementerio(0, "fairy_guardian") == 1,
+		         "fondo del mazo '%s'", e.d.l[0].mazo.front().c_str());
+		fin();
+	}
+	{
+		caso("Fiend's Hand Mirror: la magia del rival que elige 1 magia/trampa pasa a elegir otra", "fiend_s_hand_mirror");
+		Escena e;
+		e.d.activo = 1;
+		const int mf = e.colocar(0, "mirror_force");
+		const int fm = e.colocar(0, "fiend_s_hand_mirror");
+		const int th = e.colocar(1, "trap_hole");
+		mtArriba(e, 1, "swords_of_revealing_light");   // (dos candidatas: se pregunta)
+		const int k = e.mano(1, "mystical_space_typhoon");
+		VERIFICA(e.activar(1, H(1, k), { MT(0, mf) }), "MST no se activo");
+		VERIFICA(responderCon(e, 0, MT(0, fm)), "Fiend's Hand Mirror no se ofrecio");
+		pasarRespuestas(e);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.lado == 0, "no se pregunto la nueva carta");
+		int c = -1;
+		for (int q = 0; q < (int)e.d.ef.preg.cands.size(); q++)
+			if (e.d.ef.preg.cands[(size_t)q] == MT(1, th)) c = q;
+		VERIFICA(c >= 0 && e.elige(0, c), "Trap Hole no era candidata");
+		e.pasarTodo();
+		VERIFICA(!e.d.l[0].mt[(size_t)mf].vacia() && e.d.l[1].mt[(size_t)th].vacia(), "Mirror Force sigue %d, Trap Hole sigue %d", (int)!e.d.l[0].mt[(size_t)mf].vacia(),
+		         (int)!e.d.l[1].mt[(size_t)th].vacia());
+		fin();
+	}
+	{
+		caso("Flame Ruler: vale por 2 sacrificios para un FUEGO (Ryu-Ran, nivel 7); no para otro atributo", "flame_ruler");
+		Escena e;
+		const int z = e.mon(0, "flame_ruler");
+		const int k = e.mano(0, "ryu_ran");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { z };
+		VERIFICA(e.d.aplicar(j), "no invoco a Ryu-Ran con Flame Ruler");
+		e.pasarTodo();
+		VERIFICA(hayEnCampo(e, 0, "ryu_ran"), "Ryu-Ran no llego");
+		Escena f;
+		const int z2 = f.mon(0, "flame_ruler");
+		VERIFICA(!f.d.puedeInvocarNormal(0, f.mano(0, "kazejin"), { z2 }), "valio 2 para un VIENTO");
+		fin();
+	}
+	{
+		caso("Whirlwind Prodigy: vale por 2 sacrificios para un VIENTO (Kazejin, nivel 7); no para otro atributo", "whirlwind_prodigy");
+		Escena e;
+		const int z = e.mon(0, "whirlwind_prodigy");
+		const int k = e.mano(0, "kazejin");
+		Jugada j;
+		j.tipo = J_INVOCAR;
+		j.mano = k;
+		j.tributos = { z };
+		VERIFICA(e.d.aplicar(j), "no invoco a Kazejin con Whirlwind Prodigy");
+		e.pasarTodo();
+		VERIFICA(hayEnCampo(e, 0, "kazejin"), "Kazejin no llego");
+		Escena f;
+		const int z2 = f.mon(0, "whirlwind_prodigy");
+		VERIFICA(!f.d.puedeInvocarNormal(0, f.mano(0, "ryu_ran"), { z2 }), "valio 2 para un FUEGO");
+		fin();
+	}
+	{
+		caso("Formation Union: separa una union equipada (en ataque) o equipa una union a un monstruo valido", "formation_union");
+		Escena e;
+		const int x = e.mon(0, "x_head_cannon");
+		mtArriba(e, 0, "y_dragon_head", e.d.l[0].m[(size_t)x].uid);
+		VERIFICA(usarColocada(e, 0, "formation_union"), "no se activo (separar)");
+		const int y = buscarZona(e, 0, "y_dragon_head");
+		VERIFICA(y >= 0 && !e.d.l[0].m[(size_t)y].bocaAbajo && !e.d.l[0].m[(size_t)y].defensa && buscarZonaMT(e, 0, "y_dragon_head") < 0, "no se separo en ataque");
+		Escena f;
+		const int x2 = f.mon(0, "x_head_cannon");
+		f.mon(0, "y_dragon_head");
+		VERIFICA(usarColocada(f, 0, "formation_union"), "no se activo (equipar)");
+		const int u = buscarZonaMT(f, 0, "y_dragon_head");
+		VERIFICA(u >= 0 && f.d.l[0].mt[(size_t)u].eqUid == f.d.l[0].m[(size_t)x2].uid && !hayEnCampo(f, 0, "y_dragon_head"), "no se equipo a X-Head Cannon");
+		Escena g;   // (sin uniones: no)
+		g.mon(0, "battle_ox");
+		VERIFICA(!usarColocada(g, 0, "formation_union"), "se activo sin uniones");
+		fin();
+	}
+	{
+		caso("Inferno Tempest: recibes 3000+ de danno de un ataque: destierra los monstruos de mazos y cementerios", "inferno_tempest");
+		Escena e(F_BATALLA);
+		e.d.activo = 1;
+		const int a = e.mon(1, "blue_eyes");
+		const int it = e.colocar(0, "inferno_tempest");
+		for (Lado& x : e.d.l) {
+			x.mazo.push_back("raigeki");
+			x.cementerio = { "kuriboh", "pot_of_greed" };
+		}
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		VERIFICA(responderEnTurno(e, 0, MT(0, it)), "Inferno Tempest no se ofrecio tras recibir 3000 (LP %d)", e.d.l[0].lp);
+		e.pasarTodo();
+		for (int s = 0; s < 2; s++) {
+			const Lado& x = e.d.l[(size_t)s];
+			VERIFICA(x.mazo.size() == 1 && x.mazo[0] == "raigeki" && e.enCementerio(s, "kuriboh") == 0 && e.enCementerio(s, "pot_of_greed") == 1 && x.desterrados.size() >= 21,
+			         "lado %d: mazo %d, desterrados %d", s, (int)x.mazo.size(), (int)x.desterrados.size());
+		}
+		Escena f(F_BATALLA);   // (con 1700 de danno: no)
+		f.d.activo = 1;
+		const int b = f.mon(1, "battle_ox");
+		const int it2 = f.colocar(0, "inferno_tempest");
+		VERIFICA(atacar(f, b, -1), "no ataco");
+		VERIFICA(!responderEnTurno(f, 0, MT(0, it2)), "se ofrecio con 1700 de danno");
+		fin();
+	}
+	{
+		caso("Level Conversion Lab: un monstruo de tu mano y un dado: 1, al cementerio; 2-6, ese es su nivel este turno", "level_conversion_lab");
+		int visto[7] = {};
+		for (uint32_t sem = 1; sem <= 60; sem++) {
+			Escena e;
+			e.d.ef.azar = semilla(sem, 0x1Bu);
+			e.mano(0, "blue_eyes");
+			const size_t s0 = e.d.sucesos.size();
+			if (!usarColocada(e, 0, "level_conversion_lab")) {
+				VERIFICA(false, "no se activo");
+				break;
+			}
+			const int r = modifica(e, s0, "level_conversion_lab");
+			VERIFICA(r >= 1 && r <= 6, "dado %d", r);
+			if (r < 1 || r > 6) continue;
+			visto[r]++;
+			if (r == 1)
+				VERIFICA(e.enCementerio(0, "blue_eyes") == 1 && e.d.l[0].mano.empty(), "con 1 no fue al cementerio");
+			else {
+				VERIFICA(nivelLaboratorio(e.d, 0, "blue_eyes") == r, "nivel %d (dado %d)", nivelLaboratorio(e.d, 0, "blue_eyes"), r);
+				VERIFICA(e.d.puedeInvocarNormal(0, 0, {}) == (r <= 4), "dado %d: sin sacrificios %d", r, (int)e.d.puedeInvocarNormal(0, 0, {}));
+				e.d.turno++;
+				VERIFICA(nivelLaboratorio(e.d, 0, "blue_eyes") == 0, "el nivel duro mas de un turno");
+			}
+		}
+		for (int r = 1; r <= 6; r++) VERIFICA(visto[r] > 0, "el %d no salio en 60 tiradas", r);
+		fin();
+	}
+	{
+		caso("Light of Judgment: con The Sanctuary in the Sky, descarta un LUZ: una carta del rival (campo o mano) al cementerio", "light_of_judgment");
+		Escena e;
+		e.d.l[0].campo = MagiaTrampa{ "the_sanctuary_in_the_sky", false };
+		e.d.l[0].campo.uid = e.d.nuevoUid();
+		const int o = e.mon(1, "battle_ox");
+		e.mano(1, "raigeki");
+		e.mano(0, "celtic_guardian");   // (TIERRA: no vale)
+		e.mano(0, "mystical_elf");      // (LUZ)
+		const int lj = e.colocar(0, "light_of_judgment");
+		VERIFICA(!e.activar(0, MT(0, lj), {}, { 0 }), "se pudo descartar un monstruo que no es de LUZ");
+		VERIFICA(e.activar(0, MT(0, lj), {}, { 1 }), "no se activo descartando un LUZ");
+		pasarRespuestas(e);
+		const int c = candZona(e, 1, o);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && c >= 0 && e.elige(0, c), "no se pudo elegir a Battle Ox");
+		e.pasarTodo();
+		VERIFICA(e.enCementerio(1, "battle_ox") == 1 && e.enCementerio(0, "mystical_elf") == 1 && enMano(e, 0, "celtic_guardian"), "Battle Ox al cementerio %d",
+		         e.enCementerio(1, "battle_ox"));
+		Escena f;   // (de la mano del rival)
+		f.d.l[1].campo = MagiaTrampa{ "the_sanctuary_in_the_sky", false };
+		f.d.l[1].campo.uid = f.d.nuevoUid();
+		f.mano(1, "raigeki");
+		f.mano(1, "pot_of_greed");
+		f.mano(0, "mystical_elf");
+		const int lj2 = f.colocar(0, "light_of_judgment");
+		VERIFICA(f.activar(0, MT(0, lj2), {}, { 0 }), "no se activo");
+		pasarRespuestas(f);
+		int ch = -1;
+		for (int q = 0; q < (int)f.d.ef.preg.cands.size(); q++)
+			if (f.d.ef.preg.cands[(size_t)q] == H(1, 0)) ch = q;
+		VERIFICA(ch >= 0 && f.elige(0, ch), "la mano del rival no era candidata");
+		f.pasarTodo();
+		VERIFICA(enMano(f, 1, "pot_of_greed"), "descarto otra de la mano");
+		VERIFICA(f.enCementerio(1, "raigeki") == 1, "Raigeki no se descarto");
+		Escena g;   // (sin el Santuario: no)
+		g.mano(0, "mystical_elf");
+		const int lj3 = g.colocar(0, "light_of_judgment");
+		VERIFICA(!g.activar(0, MT(0, lj3), {}, { 0 }), "se activo sin The Sanctuary in the Sky");
+		fin();
+	}
+	{
+		caso("Malice Doll of Demise: mandada del campo al cementerio por una magia continua: vuelve en tu proxima espera", "malice_doll_of_demise");
+		Escena e;
+		e.mon(0, "malice_doll_of_demise");
+		VERIFICA(usar(e, "mass_driver"), "Mass Driver no se activo");
+		VERIFICA(e.enCementerio(0, "malice_doll_of_demise") == 1 && e.d.l[1].lp == LP_INICIAL - 400, "Mass Driver no la sacrifico");
+		e.d.turno += 2;
+		e.d.fase = F_ROBO;
+		motorFaseEspera(e.d);
+		resolverDisparos(e);
+		VERIFICA(e.enCementerio(0, "malice_doll_of_demise") == 0 && hayEnCampo(e, 0, "malice_doll_of_demise"), "no volvio en la espera (Mass Driver)");
+		Escena h;   // (Ectoplasmer: la sacrifica en tu fase final)
+		mtArriba(h, 0, "ectoplasmer");
+		h.mon(0, "malice_doll_of_demise");
+		motorFinTurno(h.d);
+		VERIFICA(h.enCementerio(0, "malice_doll_of_demise") == 1, "Ectoplasmer no la sacrifico");
+		h.d.turno += 2;
+		h.d.fase = F_ROBO;
+		motorFaseEspera(h.d);
+		resolverDisparos(h);
+		VERIFICA(hayEnCampo(h, 0, "malice_doll_of_demise"), "no volvio en la espera (Ectoplasmer)");
+		Escena f;   // (destruida por una magia normal: no vuelve)
+		f.mon(1, "malice_doll_of_demise");
+		VERIFICA(usar(f, "raigeki"), "Raigeki no se activo");
+		VERIFICA(f.enCementerio(1, "malice_doll_of_demise") == 1, "Raigeki no la destruyo");
+		f.d.turno++;
+		f.d.activo = 1;
+		f.d.fase = F_ROBO;
+		motorFaseEspera(f.d);
+		resolverDisparos(f);
+		VERIFICA(f.enCementerio(1, "malice_doll_of_demise") == 1, "volvio sin una magia continua");
+		fin();
+	}
+	{
+		caso("Mind on Air: el rival juega con la mano a la vista (la tuya no)", "mind_on_air");
+		Escena e;
+		e.mano(1, "raigeki");
+		e.mano(0, "pot_of_greed");
+		e.mon(0, "mind_on_air");
+		const size_t s0 = e.d.sucesos.size();
+		e.d.robarEfecto(1);
+		VERIFICA(revelo(e, s0, 1, EN_MANO, 0) && revelo(e, s0, 1, EN_MANO, 1), "no se ve la mano del rival");
+		VERIFICA(!revelo(e, s0, 0, EN_MANO, -1), "se ve tu mano");
+		fin();
+	}
+	{
+		caso("Ninjitsu Art of Transformation: sacrifica un Ninja: una Bestia/Bestia Alada/Insecto de nivel hasta +3; al irse la trampa, se destruye",
+		     "ninjitsu_art_of_transformation");
+		Escena e;
+		const int n = e.mon(0, "strike_ninja");         // (nivel 4: hasta 7)
+		e.d.l[0].mazo.push_back("big_koala");           // (Bestia 7, 2700)
+		e.d.l[0].mazo.push_back("metal_armored_bug");   // (Insecto 8, 2800: no)
+		const int z = e.colocar(0, "ninjitsu_art_of_transformation");
+		VERIFICA(e.activar(0, MT(0, z), {}, {}, { M(0, n) }), "no se activo");
+		e.pasarTodo();
+		const int b = buscarZona(e, 0, "big_koala");
+		VERIFICA(b >= 0 && buscarZona(e, 0, "metal_armored_bug") < 0 && e.enCementerio(0, "strike_ninja") == 1, "Big Koala %d", b);
+		VERIFICA(!e.d.l[0].mt[(size_t)z].vacia() && b >= 0 && e.d.l[0].mt[(size_t)z].eqUid == e.d.l[0].m[(size_t)b].uid, "la trampa no se quedo vinculada");
+		e.d.mtAlCementerio(0, z);
+		VERIFICA(buscarZona(e, 0, "big_koala") < 0 && e.enCementerio(0, "big_koala") == 1, "al irse la trampa no se destruyo Big Koala");
+		Escena f;   // (sin Ninja: no)
+		f.mon(0, "battle_ox");
+		const int z2 = f.colocar(0, "ninjitsu_art_of_transformation");
+		VERIFICA(!f.activar(0, MT(0, z2), {}, {}, { M(0, 0) }), "se activo sacrificando a un no Ninja");
+		fin();
+	}
+	{
+		caso("Pikeru's Second Sight: hasta la segunda fase final del rival, ensenia lo que roba", "pikeru_s_second_sight");
+		Escena e;
+		VERIFICA(usarColocada(e, 0, "pikeru_s_second_sight"), "no se activo");
+		size_t s0 = e.d.sucesos.size();
+		e.d.robarEfecto(1);
+		VERIFICA(revelo(e, s0, 1, EN_MANO, (int)e.d.l[1].mano.size() - 1), "no se vio lo que robo");
+		const int z = buscarZonaMT(e, 0, "pikeru_s_second_sight");
+		VERIFICA(z >= 0, "no se quedo en el campo");
+		if (z >= 0) {
+			e.d.activo = 1;   // (primera fase final del rival)
+			motorFinTurno(e.d);
+			VERIFICA(!e.d.l[0].mt[(size_t)z].vacia(), "se fue en la primera fase final del rival");
+			e.d.activo = 0;   // (la tuya no cuenta)
+			motorFinTurno(e.d);
+			e.d.activo = 1;   // (segunda del rival)
+			s0 = e.d.sucesos.size();
+			e.d.robarEfecto(1);
+			VERIFICA(revelo(e, s0, 1, EN_MANO, -1), "antes de la segunda fase final ya no se veia");
+			motorFinTurno(e.d);
+			VERIFICA(e.d.l[0].mt[(size_t)z].vacia(), "sigue tras la segunda fase final del rival");
+			s0 = e.d.sucesos.size();
+			e.d.robarEfecto(1);
+			VERIFICA(!revelo(e, s0, 1, EN_MANO, -1), "se sigue viendo lo que roba");
+		}
+		fin();
+	}
+	{
+		caso("Pitch-Black Power Stone: llega con 3 contadores; 1 vez por turno pasa uno; sin contadores se destruye", "pitch_black_power_stone");
+		Escena e;
+		const int b = e.mon(0, "skilled_dark_magician");
+		e.d.l[0].m[(size_t)b].contadores = 0;
+		e.d.recalcular();
+		const int z = e.colocar(0, "pitch_black_power_stone");
+		VERIFICA(e.activar(0, MT(0, z)), "no se activo");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mt[(size_t)z].contadores == 3, "contadores %d", e.d.l[0].mt[(size_t)z].contadores);
+		for (int k = 1; k <= 3; k++) {
+			VERIFICA(e.activar(0, MT(0, z)), "no paso el contador %d", k);
+			e.pasarTodo();
+			VERIFICA(e.d.l[0].m[(size_t)b].contadores == k, "Skilled Dark Magician: %d contadores", e.d.l[0].m[(size_t)b].contadores);
+			if (k < 3) {
+				VERIFICA(e.d.l[0].mt[(size_t)z].contadores == 3 - k, "piedra %d", e.d.l[0].mt[(size_t)z].contadores);
+				VERIFICA(!e.activar(0, MT(0, z)), "se uso dos veces en el turno");
+				e.d.turno += 2;
+				e.d.ef.usadosTurno.clear();   // (lo que hace la fase de espera de cada turno)
+			}
+		}
+		VERIFICA(e.d.l[0].mt[(size_t)z].vacia() && e.enCementerio(0, "pitch_black_power_stone") == 1, "sin contadores no se destruyo");
+		fin();
+	}
+	{
+		caso("Sasuke Samurai #4: combate: moneda antes del calculo; si aciertas, el rival se destruye", "sasuke_samurai_4");
+		int aciertos = 0, fallos2 = 0;
+		for (uint32_t sem = 1; sem <= 30; sem++) {
+			Escena e(F_BATALLA);
+			e.d.ef.azar = semilla(sem, 0x44u);
+			const int a = e.mon(0, "sasuke_samurai_4");
+			const int o = e.mon(1, "blue_eyes");
+			const size_t s0 = e.d.sucesos.size();
+			VERIFICA(atacar(e, a, o), "no ataco");
+			e.pasarTodo();   // (canta cara)
+			const int sale = modifica(e, s0, "moneda");
+			VERIFICA(sale == 0 || sale == 1, "sin moneda (%d)", sale);
+			if (sale == 1) {
+				aciertos++;
+				VERIFICA(e.enCementerio(1, "blue_eyes") == 1 && !e.d.l[0].m[(size_t)a].vacia() && e.d.l[0].lp == LP_INICIAL, "acerto: Blue-Eyes sigue o Sasuke murio");
+			} else if (sale == 0) {
+				fallos2++;
+				VERIFICA(e.d.l[0].m[(size_t)a].vacia() && e.d.l[0].lp == LP_INICIAL - 1800 && e.enCementerio(1, "blue_eyes") == 0, "fallo: LP %d", e.d.l[0].lp);
+			}
+		}
+		VERIFICA(aciertos > 0 && fallos2 > 0, "aciertos %d, fallos %d", aciertos, fallos2);
+		fin();
+	}
+	{
+		caso("Second Coin Toss: una moneda que sale mal se repite (una vez por turno)", "second_coin_toss");
+		int repetidas = 0;
+		for (uint32_t sem = 1; sem <= 30; sem++) {
+			Escena e;
+			e.d.ef.azar = semilla(sem, 0x77u);
+			VERIFICA(usar(e, "second_coin_toss"), "no se activo");
+			Azar c = e.d.ef.azar;
+			const bool primera = c.hasta(2) == 0, segunda = c.hasta(2) == 0;
+			const size_t s0 = e.d.sucesos.size();
+			const bool r = tirarMoneda(e.d, 0);
+			const int rep = modifica(e, s0, "second_coin_toss");
+			if (primera)
+				VERIFICA(r && rep == -99, "salio bien y se repitio");
+			else {
+				repetidas++;
+				VERIFICA(rep != -99 && r == segunda, "salio mal y no se repitio (o no vale la segunda)");
+				Azar c2 = e.d.ef.azar;
+				const bool p2 = c2.hasta(2) == 0;
+				const size_t s1 = e.d.sucesos.size();
+				VERIFICA(tirarMoneda(e.d, 0) == p2 && modifica(e, s1, "second_coin_toss") == -99, "se repitio dos veces en el turno");
+			}
+		}
+		VERIFICA(repetidas > 0, "nunca se repitio");
+		// (con la moneda cantada: Sasuke Samurai #4; si la primera falla, decide la segunda)
+		int vistas = 0;
+		for (uint32_t sem = 1; sem <= 30; sem++) {
+			Escena e(F_BATALLA);
+			e.d.ef.azar = semilla(sem, 0x78u);
+			mtArriba(e, 0, "second_coin_toss");
+			const int a = e.mon(0, "sasuke_samurai_4");
+			const int o = e.mon(1, "blue_eyes");
+			const size_t s0 = e.d.sucesos.size();
+			VERIFICA(atacar(e, a, o), "no ataco");
+			e.pasarTodo();
+			const int v1 = modifica(e, s0, "moneda"), v2 = modifica(e, s0, "second_coin_toss");
+			VERIFICA((v2 != -99) == (v1 == 0), "semilla %u: primera %d, segunda %d", sem, v1, v2);
+			const bool acierta = v2 != -99 ? v2 == 1 : v1 == 1;
+			vistas += v2 != -99;
+			VERIFICA(acierta == (e.enCementerio(1, "blue_eyes") == 1), "semilla %u: el resultado no sigue a la ultima moneda", sem);
+		}
+		VERIFICA(vistas > 0, "la moneda cantada nunca se repitio");
+		fin();
+	}
+	{
+		caso("Serial Spell: al activar tu magia normal: descartas la mano y su efecto es el de esa magia", "serial_spell");
+		Escena e;
+		e.mano(0, "battle_ox");
+		e.mano(0, "kuriboh");
+		const int p = e.mano(0, "pot_of_greed");
+		e.mano(0, "serial_spell");
+		VERIFICA(e.activar(0, H(0, p)), "Pot of Greed no se activo");
+		int k = -1;
+		for (int q = 0; q < (int)e.d.l[0].mano.size(); q++)
+			if (e.d.l[0].mano[(size_t)q] == "serial_spell") k = q;
+		VERIFICA(responderCon(e, 0, H(0, k)), "Serial Spell no se ofrecio tras Pot of Greed");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mano.size() == 4 && e.enCementerio(0, "battle_ox") == 1 && e.enCementerio(0, "kuriboh") == 1 && e.enCementerio(0, "serial_spell") == 1,
+		         "mano %d (esperado 4: 2 de Serial + 2 de Pot)", (int)e.d.l[0].mano.size());
+		Escena f;   // (con la magia del rival: no)
+		f.d.activo = 1;
+		const int s = f.mano(0, "serial_spell");
+		VERIFICA(f.activar(1, H(1, f.mano(1, "pot_of_greed"))), "Pot del rival no se activo");
+		VERIFICA(!responderCon(f, 0, H(0, s)), "se ofrecio con la magia del rival");
+		fin();
+	}
+	{
+		caso("Shifting Shadows: 1 vez por turno, paga 300: reordena tus boca abajo en defensa (siguen boca abajo en defensa)", "shifting_shadows");
+		int cambios = 0;
+		for (uint32_t sem = 1; sem <= 20; sem++) {
+			Escena e;
+			e.d.ef.azar = semilla(sem, 0x21u);
+			e.mon(0, "battle_ox", true, true);
+			e.mon(0, "kuriboh", true, true);
+			e.mon(0, "celtic_guardian", true, true);
+			e.mon(0, "summoned_skull");   // (boca arriba: no se mueve)
+			const int z = e.colocar(0, "shifting_shadows");
+			VERIFICA(e.activar(0, MT(0, z)), "no se activo");
+			e.pasarTodo();
+			VERIFICA(e.d.l[0].lp == LP_INICIAL - 300, "LP %d", e.d.l[0].lp);
+			VERIFICA(e.d.l[0].m[3].id == "summoned_skull", "se movio el boca arriba");
+			std::vector<std::string> ids;
+			for (int q = 0; q < 3; q++) {
+				const Monstruo& m = e.d.l[0].m[(size_t)q];
+				VERIFICA(m.bocaAbajo && m.defensa, "zona %d no quedo boca abajo en defensa", q);
+				ids.push_back(m.id);
+			}
+			cambios += ids != std::vector<std::string>{ "battle_ox", "kuriboh", "celtic_guardian" };
+			std::sort(ids.begin(), ids.end());
+			VERIFICA((ids == std::vector<std::string>{ "battle_ox", "celtic_guardian", "kuriboh" }), "cambiaron los monstruos");
+			VERIFICA(!e.activar(0, MT(0, z)), "se uso dos veces en el turno");
+		}
+		VERIFICA(cambios > 0, "nunca cambio el orden");
+		fin();
+	}
+	{
+		caso("Spirit Elimination: este turno, lo que destierras de tu cementerio sale de tu campo", "spirit_elimination");
+		Escena e;
+		e.mon(0, "battle_ox");
+		e.d.l[0].cementerio = { "baby_dragon" };   // (VIENTO: el coste de Silpheed)
+		VERIFICA(usar(e, "spirit_elimination"), "no se activo");
+		const int k = e.mano(0, "silpheed");
+		VERIFICA(e.activar(0, H(0, k)), "Silpheed no se invoco");
+		e.pasarTodo();
+		VERIFICA(hayEnCampo(e, 0, "silpheed") && !hayEnCampo(e, 0, "battle_ox") && e.enCementerio(0, "baby_dragon") == 1 && e.d.l[0].desterrados.size() == 1 &&
+		             e.d.l[0].desterrados[0] == "battle_ox",
+		         "desterrado '%s', Baby Dragon en el cementerio %d", e.d.l[0].desterrados.empty() ? "" : e.d.l[0].desterrados[0].c_str(), e.enCementerio(0, "baby_dragon"));
+		e.d.turno++;   // (al turno siguiente ya no)
+		e.d.l[0].cementerio.push_back("harpie_lady");
+		const int k2 = e.mano(0, "silpheed");
+		VERIFICA(e.activar(0, H(0, k2)), "la segunda Silpheed no se invoco");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].cementerio.size() == 2 && e.d.l[0].desterrados.size() == 2 && e.d.l[0].desterrados[1] != "battle_ox" && e.d.l[0].monstruos() == 2,
+		         "al turno siguiente seguia (cementerio %d, desterrados %d)", (int)e.d.l[0].cementerio.size(), (int)e.d.l[0].desterrados.size());
+		fin();
+	}
+	{
+		caso("Spirit's Invitation: tu Spirit vuelve a la mano: uno del rival vuelve a la suya; en tu espera pagas 500 o se destruye", "spirit_s_invitation");
+		Escena e;
+		mtArriba(e, 0, "spirit_s_invitation");
+		VERIFICA(invocar(e, e.mano(0, "asura_priest")), "no invoco a Asura Priest");
+		e.pasarTodo();
+		e.mon(1, "battle_ox");
+		e.mon(1, "blue_eyes");
+		motorFinTurno(e.d);
+		VERIFICA(enMano(e, 0, "asura_priest") && e.d.l[1].monstruos() == 1, "Asura en la mano %d, monstruos del rival %d", (int)enMano(e, 0, "asura_priest"), e.d.l[1].monstruos());
+		Escena f;
+		const int z = mtArriba(f, 0, "spirit_s_invitation");
+		f.d.fase = F_ROBO;
+		motorFaseEspera(f.d);
+		resolverDisparos(f);
+		VERIFICA(f.d.l[0].lp == LP_INICIAL - 500 && !f.d.l[0].mt[(size_t)z].vacia(), "no pago 500: LP %d", f.d.l[0].lp);
+		Escena g;
+		const int z2 = mtArriba(g, 0, "spirit_s_invitation");
+		g.d.l[0].lp = 400;
+		g.d.fase = F_ROBO;
+		motorFaseEspera(g.d);
+		resolverDisparos(g);
+		VERIFICA(g.d.l[0].mt[(size_t)z2].vacia() && g.d.l[0].lp == 400, "sin poder pagar no se destruyo");
+		fin();
+	}
+	{
+		caso("Spiritual Energy Settle Machine: los Spirit no vuelven; descarta 1 en tu fase final o se destruye; al irse, vuelven", "spiritual_energy_settle_machine");
+		Escena e;
+		VERIFICA(usar(e, "spiritual_energy_settle_machine"), "no se activo");
+		VERIFICA(invocar(e, e.mano(0, "asura_priest")), "no invoco a Asura Priest");
+		e.pasarTodo();
+		e.mano(0, "kuriboh");
+		motorFinTurno(e.d);
+		VERIFICA(hayEnCampo(e, 0, "asura_priest") && e.enCementerio(0, "kuriboh") == 1 && buscarZonaMT(e, 0, "spiritual_energy_settle_machine") >= 0,
+		         "Asura en el campo %d, descarto %d", (int)hayEnCampo(e, 0, "asura_priest"), e.enCementerio(0, "kuriboh"));
+		e.d.turno += 2;   // (tu siguiente fase final, sin cartas en la mano)
+		motorFinTurno(e.d);
+		VERIFICA(buscarZonaMT(e, 0, "spiritual_energy_settle_machine") < 0 && enMano(e, 0, "asura_priest"), "Machine sigue %d, Asura en la mano %d",
+		         buscarZonaMT(e, 0, "spiritual_energy_settle_machine"), (int)enMano(e, 0, "asura_priest"));
+		fin();
+	}
+	{
+		caso("The Hunter with 7 Weapons: al invocarse normal declara un tipo: +1000 en el calculo contra ese tipo", "the_hunter_with_7_weapons");
+		for (int contraDragon = 0; contraDragon < 2; contraDragon++) {
+			Escena e;
+			const int bd = e.mon(1, "baby_dragon");       // (Dragon 1200)
+			const int cg = e.mon(1, "celtic_guardian");   // (Guerrero 1400)
+			VERIFICA(invocar(e, e.mano(0, "the_hunter_with_7_weapons")), "no invoco");
+			pasarRespuestas(e);
+			const int c = candZona(e, 1, bd);
+			VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && c >= 0 && e.elige(0, c), "no pregunto el tipo (o Baby Dragon no era candidato)");
+			e.pasarTodo();
+			const int h = buscarZona(e, 0, "the_hunter_with_7_weapons");
+			e.d.fase = F_BATALLA;
+			VERIFICA(h >= 0 && atacar(e, h, contraDragon ? bd : cg), "no ataco");
+			e.pasarTodo();
+			if (contraDragon)
+				VERIFICA(e.enCementerio(1, "baby_dragon") == 1 && e.d.l[1].lp == LP_INICIAL - 800 && hayEnCampo(e, 0, "the_hunter_with_7_weapons"), "contra el Dragon: LP %d",
+				         e.d.l[1].lp);
+			else
+				VERIFICA(e.enCementerio(0, "the_hunter_with_7_weapons") == 1 && e.d.l[0].lp == LP_INICIAL - 400, "contra el Guerrero: LP %d", e.d.l[0].lp);
+		}
+		fin();
+	}
+	{
+		caso("Gamble: rival con 6+ y tu con 2 o menos: moneda; aciertas, robas hasta 5; fallas, te saltas el proximo turno", "gamble");
+		int aciertos = 0, fallos2 = 0;
+		for (uint32_t sem = 1; sem <= 30; sem++) {
+			Escena e;
+			e.d.ef.azar = semilla(sem, 0x66u);
+			e.mano(0, "kuriboh");
+			for (int q = 0; q < 6; q++) e.mano(1, "battle_ox");
+			const size_t s0 = e.d.sucesos.size();
+			VERIFICA(usarColocada(e, 0, "gamble"), "no se activo");
+			const int sale = modifica(e, s0, "moneda");
+			if (sale == 1) {
+				aciertos++;
+				VERIFICA(e.d.l[0].mano.size() == 5, "acerto: mano %d", (int)e.d.l[0].mano.size());
+			} else {
+				fallos2++;
+				VERIFICA(e.d.l[0].mano.size() == 1 && e.d.ef.saltaRobo[0] > 0 && e.d.ef.sinAtaqueTurno[0] == e.d.turno + 2 && e.d.ef.sinInvocarTurno[0] == e.d.turno + 2,
+				         "fallo: no se salta el proximo turno");
+			}
+		}
+		VERIFICA(aciertos > 0 && fallos2 > 0, "aciertos %d, fallos %d", aciertos, fallos2);
+		Escena f;   // (con 5 en la mano del rival: no)
+		for (int q = 0; q < 5; q++) f.mano(1, "battle_ox");
+		VERIFICA(!usarColocada(f, 0, "gamble"), "se activo con 5 en la mano del rival");
+		fin();
+	}
+}
 int main(int argc, char** argv)
 {
 	if (argc < 2 || !base.leerCartas(argv[1])) {
 		fprintf(stderr, "uso: prueba_efectos <carpeta ui/>\n");
 		return 2;
 	}
+	// rama classic-probador: tambien rivales.txt (las cartas que no se invocan normal, lineas N; recetas de ritual y
+	// fusion), como el juego (Base::leer); sin ellos Harpie Lady Sisters se podia invocar normal en las pruebas
+	base.leerRivales(std::string(argv[1]) + "rivales.txt");
+	base.leerRivales(std::string(argv[1]) + "personajes_rivales.txt");
 	tanda1();
 	tanda2();
 	tanda3();
@@ -8479,6 +13679,15 @@ int main(int argc, char** argv)
 	tanda7aq();
 	tanda7ar();
 	tanda7as();
+	tandaProbador();
+	tandaMotor2Fusiones();   // (rama classic-motor2)
+	tandaMotor2Ventanas();
+	tandaMotor2Parciales();
+	tandaMotor2Parciales2();
+	tandaMotor2Goblin();
+	tandaMotor2Extras();
+	tandaElecciones();   // (rama classic-elecciones)
+	tandaControlFinal();   // (control final: las que la certificacion dejaba sin prueba)
 	iaUsa();
 	// el contador: cartas con efecto en el motor y cuantas tienen caso propio
 	int conCaso = 0;

@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "constructor_textos.h"   // textos ES/EN (T)
+#include "guardado.h"             // rama classic-pulido: guardado atomico y aviso sin carpeta de datos
 
 namespace mazo {
 
@@ -38,6 +39,8 @@ constexpr int MIN_PRINCIPAL = 40, MAX_PRINCIPAL = 60, MAX_FUSION = 15, MANO_INIC
 
 struct Carta {
 	std::string id, nombre, clase, atributo, raza, texto, subtipo, passcode;
+	std::string atributoClave, razaClave;   // (en espanol siempre: los filtros no cambian con el idioma)
+	std::string busqueda;                   // nombre normalizado (mayusculas sin tildes) para buscar
 	int nivel{ 0 }, atk{ 0 }, def{ 0 }, limite{ 3 };
 	// rama classic-personajes: carta firma de un personaje (cartas_classic.txt ...|firma|duenno,duenno). Bloqueada hasta
 	// vencer a uno de sus duennos en el modo historia: mientras, limite = 0 (no se puede usar)
@@ -84,6 +87,29 @@ inline char inicialDe(const std::string& n)
 	return '#';
 }
 
+// para buscar por nombre: mayusculas sin tildes (UTF-8 de las vocales con tilde, la enie y la dieresis); lo demas
+// que no sea letra o numero, un espacio
+inline std::string normalizar(const std::string& n)
+{
+	std::string r;
+	for (size_t i = 0; i < n.size(); i++) {
+		unsigned char c = (unsigned char)n[i];
+		if (c >= 'a' && c <= 'z') r += (char)(c - 32);
+		else if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) r += (char)c;
+		else if (c == 0xC3 && i + 1 < n.size()) {
+			const unsigned char d = (unsigned char)n[++i] | 0x20;
+			r += d == 0xA1 || d == 0xA0 || d == 0xA4 ? 'A' : d == 0xA9 || d == 0xA8 || d == 0xAB ? 'E' : d == 0xAD || d == 0xAC || d == 0xAF ? 'I'
+			   : d == 0xB3 || d == 0xB2 || d == 0xB6 ? 'O' : d == 0xBA || d == 0xB9 || d == 0xBC ? 'U' : d == 0xB1 ? 'N' : ' ';
+		} else if (c >= 0x80) {
+			while (i + 1 < n.size() && ((unsigned char)n[i + 1] & 0xC0) == 0x80) i++;
+			r += ' ';
+		} else {
+			r += ' ';
+		}
+	}
+	return r;
+}
+
 // orden de las clases en la coleccion y en el filtro
 inline int ordenClase(const std::string& c)
 {
@@ -106,19 +132,33 @@ public:
 	std::function<std::string(const std::string&)> nombrePersonaje;
 
 	// aplica los bloqueos de las cartas firma (tras leer y cada vez que cambian los vencidos)
+	// rama classic-constructor2: Opciones > "Permitir cartas prohibidas" (opciones.txt, permitir_prohibidas=1): sin la
+	// banlist Goat (las prohibidas se pueden usar y limitada / semilimitada no cuentan: siempre hasta 3). limiteBase
+	// guarda el estado Goat de cada carta (se sigue mostrando)
+	bool permitirProhibidas{ false };
+
+	// aplica los bloqueos de las cartas firma y la banlist (tras leer y cada vez que cambian los vencidos o la opcion)
 	void desbloquear(const std::set<std::string>& v)
 	{
 		vencidos = v;
 		int bloq = 0;
 		for (Carta& k : cartas) {
-			if (!k.firma) continue;
-			k.bloqueada = true;
-			for (const std::string& d : k.duennos)
-				if (vencidos.count(d)) k.bloqueada = false;
-			k.limite = k.bloqueada ? 0 : k.limiteBase;
+			k.bloqueada = false;
+			if (k.firma) {
+				k.bloqueada = true;
+				for (const std::string& d : k.duennos)
+					if (vencidos.count(d)) k.bloqueada = false;
+			}
+			k.limite = k.bloqueada ? 0 : permitirProhibidas ? 3 : k.limiteBase;
 			bloq += k.bloqueada ? 1 : 0;
 		}
-		fprintf(stderr, "[mazo] cartas firma bloqueadas: %d\n", bloq);
+		fprintf(stderr, "[mazo] cartas firma bloqueadas: %d%s\n", bloq, permitirProhibidas ? " (banlist Goat desactivada en Opciones)" : "");
+	}
+	void ponerPermitirProhibidas(bool si)
+	{
+		if (si == permitirProhibidas) return;
+		permitirProhibidas = si;
+		desbloquear(vencidos);
 	}
 	// "Vence a X" (o a X / Y) de una carta firma bloqueada
 	std::string venceA(const Carta& k) const
@@ -154,6 +194,7 @@ public:
 					Carta& k = cartas[it->second];
 					k.nombre = c[1]; k.atributo = c[3]; k.raza = c[4]; k.texto = c[8];
 					k.inicial = inicialDe(k.nombre);
+					k.busqueda = normalizar(k.nombre);
 					continue;
 				}
 				if (indice.count(c[0])) continue;
@@ -161,6 +202,9 @@ public:
 				k.id = c[0]; k.nombre = c[1]; k.clase = c[2]; k.atributo = c[3]; k.raza = c[4];
 				k.nivel = atoi(c[5].c_str()); k.atk = atoi(c[6].c_str()); k.def = atoi(c[7].c_str()); k.texto = c[8];
 				k.inicial = inicialDe(k.nombre);
+				k.atributoClave = k.atributo;
+				k.razaClave = k.raza;
+				k.busqueda = normalizar(k.nombre);
 				indice[k.id] = (int)cartas.size();
 				cartas.push_back(std::move(k));
 			}
@@ -242,6 +286,7 @@ template <class T> void barajar(std::vector<T>& v, Azar& a)
 
 struct Mazo {
 	std::vector<std::string> principal, fusion;   // una entrada por copia
+	std::string nombre;                           // (rama classic-constructor2: varios mazos con nombre)
 
 	int cuantas(const std::string& id) const
 	{
@@ -256,7 +301,7 @@ struct Mazo {
 			return false;
 		};
 		if (!k) return no(T("Carta desconocida"));
-		if (k->bloqueada) return no(T("Carta firma bloqueada") + ": " + col.venceA(*k));
+		if (k->bloqueada) return no(T("Carta firma bloqueada") + ": " + col.venceA(*k) + T(" para desbloquear"));
 		if (k->limite == 0) return no(T("Prohibida en el Formato Goat"));
 		if (cuantas(id) >= k->limite) return no(T(k->limite == 1 ? "Limitada: 1 copia" : k->limite == 2 ? "Semilimitada: 2 copias" : "Máximo 3 copias"));
 		if (k->clase == "fusion") {
@@ -314,7 +359,10 @@ struct Mazo {
 		for (const auto& p : c) {
 			const Carta* k = col.carta(p.first);
 			if (!k) return no(T("Carta desconocida: ") + p.first);
-			if (p.second > k->limite) return no(k->nombre + T(": más copias de las permitidas"));
+			if (k->bloqueada) return no(k->nombre + ": " + T("carta firma bloqueada") + " (" + col.venceA(*k) + T(" para desbloquear") + ")");
+			if (k->limite == 0) return no(k->nombre + ": " + T("prohibida en el Formato Goat"));
+			if (p.second > k->limite)
+				return no(k->nombre + ": " + T(k->limite == 1 ? "limitada a 1 copia" : k->limite == 2 ? "semilimitada a 2 copias" : "máximo 3 copias"));
 		}
 		return true;
 	}
@@ -322,22 +370,19 @@ struct Mazo {
 	// ---- archivo
 	bool guardar(const std::string& ruta) const
 	{
-		FILE* f = fopen(ruta.c_str(), "w");
-		if (!f) {
-			fprintf(stderr, "[mazo] no se pudo escribir %s\n", ruta.c_str());
-			return false;
-		}
-		fprintf(f, "# Yugioh Classic Remaster - mazo del jugador (principal %d, fusion %d)\n", (int)principal.size(), (int)fusion.size());
+		std::string s;   // (rama classic-pulido: guardado atomico, guardado.h)
+		guardado::agregar(s, "# Yugioh Classic Remaster - mazo del jugador (principal %d, fusion %d)\n", (int)principal.size(), (int)fusion.size());
+		if (!nombre.empty()) guardado::agregar(s, "nombre %s\n", nombre.c_str());   // (las versiones viejas la saltan: no es una carta)
 		for (int lado = 0; lado < 2; lado++) {
 			const std::vector<std::string>& v = lado ? fusion : principal;
 			for (size_t i = 0; i < v.size();) {
 				size_t j = i;
 				while (j < v.size() && v[j] == v[i]) j++;
-				fprintf(f, "%s %s %d\n", lado ? "fusion" : "principal", v[i].c_str(), (int)(j - i));
+				guardado::agregar(s, "%s %s %d\n", lado ? "fusion" : "principal", v[i].c_str(), (int)(j - i));
 				i = j;
 			}
 		}
-		fclose(f);
+		if (!guardado::guardarAtomico(ruta, s)) return false;
 		fprintf(stderr, "[mazo] guardado en %s (%d + %d)\n", ruta.c_str(), (int)principal.size(), (int)fusion.size());
 		return true;
 	}
@@ -348,9 +393,15 @@ struct Mazo {
 		if (!f) return false;
 		principal.clear();
 		fusion.clear();
+		nombre.clear();
 		std::string l;
 		while (std::getline(f, l)) {
+			if (!l.empty() && l.back() == '\r') l.pop_back();
 			if (l.empty() || l[0] == '#') continue;
+			if (l.rfind("nombre ", 0) == 0) {
+				nombre = l.substr(7);
+				continue;
+			}
 			std::istringstream s(l);
 			std::string lado, id;
 			int n = 1;
@@ -453,8 +504,217 @@ inline std::string rutaMazo(const std::string& assets)
 	mkdir("/data/yugioh_classic", 0777);
 	struct stat st{};
 	if (stat("/data/yugioh_classic", &st) == 0 && S_ISDIR(st.st_mode)) return "/data/yugioh_classic/mazo.txt";
+	guardado::avisarSinCarpeta();   // (rama classic-pulido: se avisa en pantalla)
 	return assets + "../mazo.txt";
 #endif
 }
+
+
+// ---------------------------------------------------------------------------------------------- mazos de inicio
+// (rama classic-constructor2) Cuatro mazos tematicos prearmados con su carta de campo, para probar los campos desde el
+// principio. Cada uno es una lista de "id copias"; lo que no este en la coleccion, sea firma (bloqueable) o pase el
+// limite Goat se salta, y si faltan cartas para 40 se completa con monstruos del mismo tema (nivel <= 4, mas ATK).
+// Asi siempre salen validos. Las fusiones van a su mazo.
+struct Inicio {
+	const char *es, *en;
+	const char* lista;                                    // "id n,id n,..."
+	std::function<bool(const Carta&)> tema;               // para completar
+};
+inline const std::vector<Inicio>& mazosInicio()
+{
+	static const std::vector<Inicio> v = {
+		{ "Dragones de la Montaña", "Mountain Dragons",
+		  "mountain 3,luster_dragon 3,spear_dragon 3,masked_dragon 3,armed_dragon_lv3 2,horus_the_black_flame_dragon_lv4 2,blackland_fire_dragon 2,"
+		  "koumori_dragon 2,mirage_dragon 1,element_dragon 1,baby_dragon 1,armed_dragon_lv5 1,luster_dragon_2 1,"
+		  "dragon_treasure 2,pot_of_greed 1,heavy_storm 1,mystical_space_typhoon 1,swords_of_revealing_light 1,nobleman_of_crossout 1,smashing_ground 1,"
+		  "mirror_force 1,trap_hole 2,sakuretsu_armor 2,magic_cylinder 1,call_of_the_haunted 1,"
+		  "gaia_the_dragon_champion 1,fiend_skull_dragon 1,black_skull_dragon 1,thousand_dragon 1",
+		  [](const Carta& k) { return k.razaClave == "Dragón"; } },
+		{ "Océano Legendario", "Legendary Ocean",
+		  "umi 2,a_legendary_ocean 2,7_colored_fish 3,giant_red_seasnake 2,abyss_soldier 2,mermaid_knight 2,great_white 2,sea_serpent_warrior_of_darkness 2,"
+		  "cure_mermaid 2,space_mambo 2,unshaven_angler 1,terrorking_salmon 1,the_legendary_fisherman 1,maiden_of_the_aqua 1,"
+		  "pot_of_greed 1,heavy_storm 1,mystical_space_typhoon 1,snatch_steal 1,fissure 1,book_of_moon 2,"
+		  "torrential_tribute 1,mirror_force 1,trap_hole 2,waboku 1,sakuretsu_armor 2,"
+		  "deepsea_shark 1,humanoid_worm_drake 1,roaring_ocean_snake 1",
+		  [](const Carta& k) { return k.atributoClave == "AGUA"; } },
+		{ "Sombras de Yami", "Shadows of Yami",
+		  "yami 3,archfiend_soldier 3,dark_elf 2,giant_orc 2,skilled_dark_magician 2,opticlops 2,la_jinn_the_mystical_genie_of_the_lamp 2,whiptail_crow 2,"
+		  "nuvia_the_wicked 1,terrorking_archfiend 1,man_eating_treasure_chest 2,breaker_the_magical_warrior 1,a_man_with_wdjat 1,"
+		  "pot_of_greed 1,graceful_charity 1,black_pendant 2,axe_of_despair 2,premature_burial 1,heavy_storm 1,"
+		  "ring_of_destruction 1,sakuretsu_armor 2,dark_mirror_force 1,solemn_judgment 1,"
+		  "bickuribox 1,dark_balter_the_terrible 1,sanwitch 1,skull_knight 1,reaper_on_the_nightmare 1",
+		  [](const Carta& k) { return k.atributoClave == "OSCURIDAD" && (k.razaClave == "Demonio" || k.razaClave == "Lanzador de Conjuros"); } },
+		{ "Guerreros de Sogen", "Sogen Warriors",
+		  "sogen 3,reinforcement_of_the_army 2,pot_of_greed 1,heavy_storm 1,mystical_space_typhoon 1,swords_of_revealing_light 1,nobleman_of_crossout 1,"
+		  "axe_of_despair 1,rush_recklessly 2,mirror_force 1,trap_hole 2,sakuretsu_armor 2,magic_cylinder 1,"
+		  "flame_swordsman 1,karbonala_warrior 1,giltia_the_d_knight 1,warrior_of_tradition 1,dark_blade_the_dragon_knight 1",
+		  [](const Carta& k) { return k.razaClave == "Guerrero" || k.razaClave == "Guerrero-Bestia"; } },
+	};
+	return v;
+}
+inline Mazo armarInicio(const Coleccion& col, const Inicio& ini, bool ingles)
+{
+	Mazo m;
+	m.nombre = ingles ? ini.en : ini.es;
+	// (siempre con la banlist Goat, aunque Opciones la desactive: asi el mazo vale con las dos)
+	auto sirve = [&](const Carta* k) { return k && !k->firma && !k->bloqueada && k->limiteBase > 0 && m.cuantas(k->id) < k->limiteBase; };
+	for (const std::string& par : partir(ini.lista, ',')) {
+		std::istringstream e(par);
+		std::string id;
+		int n = 1;
+		e >> id >> n;
+		const Carta* k = col.carta(id);
+		if (!sirve(k)) {
+			fprintf(stderr, "[mazo] mazo de inicio '%s': sin %s\n", ini.es, id.c_str());
+			continue;
+		}
+		for (int i = 0; i < n && sirve(k); i++) m.agregar(col, id);
+	}
+	// completar hasta 40 con el tema (nivel <= 4, de mas ATK)
+	std::vector<const Carta*> c;
+	for (const Carta& k : col.cartas) {
+		if (sirve(&k) && (k.clase == "normal" || k.clase == "efecto") && k.nivel <= 4 && ini.tema(k)) c.push_back(&k);
+	}
+	std::stable_sort(c.begin(), c.end(), [](const Carta* a, const Carta* b) { return a->atk > b->atk; });
+	for (int ronda = 0; ronda < 3 && (int)m.principal.size() < MIN_PRINCIPAL; ronda++) {
+		for (const Carta* k : c) {
+			if ((int)m.principal.size() >= MIN_PRINCIPAL) break;
+			if (sirve(k)) m.agregar(col, k->id);
+		}
+	}
+	if ((int)m.principal.size() < MIN_PRINCIPAL) {   // (sin tema suficiente: el mazo inicial completa)
+		const Mazo d = Mazo::porDefecto(col);
+		for (const std::string& id : d.principal) {
+			if ((int)m.principal.size() >= MIN_PRINCIPAL) break;
+			const Carta* k = col.carta(id);
+			if (sirve(k)) m.agregar(col, id);
+		}
+	}
+	m.ordenar(col);
+	return m;
+}
+
+// ---------------------------------------------------------------------------------------------- varios mazos
+// (rama classic-constructor2) Los mazos del jugador. En la carpeta de mazo.txt (consola: /data/yugioh_classic/):
+//   mazos.txt          indice: "activo <n>" y una linea "mazo <archivo>" por mazo, en orden
+//   mazos/<archivo>    cada mazo en el formato de mazo.txt (con una linea "nombre ...")
+//   mazo.txt           copia del mazo activo (el formato de siempre: lo leen las versiones anteriores)
+// La primera vez se importa mazo.txt (si existe) como "Mi mazo" y se agregan los mazos de inicio.
+constexpr int MAX_MAZOS = 20;   // (como Master Duel)
+struct Biblioteca {
+	std::vector<Mazo> mazos;
+	std::vector<std::string> archivos;
+	int activo{ -1 };
+	std::string carpeta, rutaCompat;   // carpeta con "/" al final; mazo.txt
+
+	std::string rutaIndice() const { return carpeta + "mazos.txt"; }
+	std::string rutaArchivo(int i) const { return carpeta + "mazos/" + archivos[(size_t)i]; }
+
+	bool guardarIndice() const
+	{
+		std::string s;
+		guardado::agregar(s, "# Yugioh Classic Remaster - mazos del jugador (el activo es el que usa el duelo)\nactivo %d\n", activo);
+		for (const std::string& a : archivos) guardado::agregar(s, "mazo %s\n", a.c_str());
+		return guardado::guardarAtomico(rutaIndice(), s);
+	}
+	// escribe el mazo i (y mazo.txt si es el activo)
+	bool guardarMazo(int i)
+	{
+		if (i < 0 || i >= (int)mazos.size()) return false;
+		const bool ok = mazos[(size_t)i].guardar(rutaArchivo(i));
+		if (i == activo && !rutaCompat.empty()) mazos[(size_t)i].guardar(rutaCompat);
+		return ok;
+	}
+	std::string archivoNuevo() const
+	{
+		for (int n = 1;; n++) {
+			const std::string a = "mazo_" + std::to_string(n) + ".txt";
+			if (std::find(archivos.begin(), archivos.end(), a) == archivos.end()) return a;
+		}
+	}
+	// agrega un mazo (y lo escribe); devuelve su indice o -1 si ya hay MAX_MAZOS
+	int agregar(const Mazo& m)
+	{
+		if ((int)mazos.size() >= MAX_MAZOS) return -1;
+		mazos.push_back(m);
+		archivos.push_back(archivoNuevo());
+		const int i = (int)mazos.size() - 1;
+		guardarMazo(i);
+		guardarIndice();
+		return i;
+	}
+	bool borrar(int i)
+	{
+		if (i < 0 || i >= (int)mazos.size()) return false;
+		remove(rutaArchivo(i).c_str());
+		mazos.erase(mazos.begin() + i);
+		archivos.erase(archivos.begin() + i);
+		if (activo == i) activo = -1;
+		else if (activo > i) activo--;
+		guardarIndice();
+		return true;
+	}
+	// elegir el mazo de los duelos: solo uno valido (motivo: por que no)
+	bool usar(int i, const Coleccion& col, std::string* motivo = nullptr)
+	{
+		if (i < 0 || i >= (int)mazos.size()) return false;
+		if (!mazos[(size_t)i].valido(col, motivo)) return false;
+		activo = i;
+		guardarIndice();
+		if (!rutaCompat.empty()) mazos[(size_t)i].guardar(rutaCompat);
+		return true;
+	}
+	const Mazo* mazoActivo() const { return activo >= 0 && activo < (int)mazos.size() ? &mazos[(size_t)activo] : nullptr; }
+
+	// lee los mazos; la primera vez los arma (importa mazo.txt y agrega los de inicio)
+	void cargar(const std::string& rutaMazoTxt, const Coleccion& col, bool ingles)
+	{
+		rutaCompat = rutaMazoTxt;
+		const size_t barra = rutaMazoTxt.find_last_of('/');
+		carpeta = barra == std::string::npos ? std::string() : rutaMazoTxt.substr(0, barra + 1);
+		mkdir((carpeta + "mazos").c_str(), 0777);
+		mazos.clear();
+		archivos.clear();
+		activo = -1;
+		std::ifstream f(rutaIndice());
+		if (f) {
+			std::string l;
+			while (std::getline(f, l)) {
+				if (!l.empty() && l.back() == '\r') l.pop_back();
+				if (l.rfind("activo ", 0) == 0) activo = atoi(l.c_str() + 7);
+				if (l.rfind("mazo ", 0) != 0) continue;
+				Mazo m;
+				const std::string a = l.substr(5);
+				if (!m.cargar(carpeta + "mazos/" + a, col)) continue;
+				if (m.nombre.empty()) m.nombre = (ingles ? "Deck " : "Mazo ") + std::to_string(mazos.size() + 1);
+				mazos.push_back(m);
+				archivos.push_back(a);
+			}
+			if (activo >= (int)mazos.size()) activo = -1;
+			fprintf(stderr, "[mazo] %d mazos en %s, activo %d\n", (int)mazos.size(), rutaIndice().c_str(), activo);
+			return;
+		}
+		// primera vez
+		Mazo viejo;
+		if (viejo.cargar(rutaMazoTxt, col) && !(viejo.principal.empty() && viejo.fusion.empty())) {
+			if (viejo.nombre.empty()) viejo.nombre = ingles ? "My deck" : "Mi mazo";
+			agregar(viejo);
+			if (viejo.valido(col)) activo = 0;
+		}
+		for (const Inicio& ini : mazosInicio()) {
+			const Mazo m = armarInicio(col, ini, ingles);
+			std::string motivo;
+			if (!m.valido(col, &motivo)) {
+				fprintf(stderr, "[mazo] mazo de inicio '%s' no valido: %s\n", ini.es, motivo.c_str());
+				continue;
+			}
+			const int i = agregar(m);
+			if (activo < 0) activo = i;
+		}
+		guardarIndice();
+		if (const Mazo* a = mazoActivo()) a->guardar(rutaCompat);
+		fprintf(stderr, "[mazo] primera vez: %d mazos (activo %d)\n", (int)mazos.size(), activo);
+	}
+};
 
 }   // namespace mazo

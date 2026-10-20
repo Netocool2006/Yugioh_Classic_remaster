@@ -78,8 +78,10 @@ void main()
 		tam = 0.025 + 0.025 * azar(s, 6u);
 		vida *= 1.0 - f * 0.5;
 	} else if (tipo == 2) {   // hojas / briznas
-		p.xz += viento * f * 6.0 * (0.6 + 0.6 * azar(s, 5u));
-		p.y = 0.05 + 0.5 * abs(sin(f * 3.14159 * (1.0 + azar(s, 6u))));
+		// las rafagas del pasto de Sogen (campos.frag, rafagaSogen: la misma banda que viaja) las empujan y levantan
+		float raf = smoothstep(0.3, 0.9, sin(dot(p.xz, normalize(viento)) * 0.32 - t * 1.25) * 0.5 + 0.5);
+		p.xz += viento * f * 6.0 * (0.6 + 0.6 * azar(s, 5u)) * (0.7 + 0.6 * raf);
+		p.y = 0.05 + 0.5 * abs(sin(f * 3.14159 * (1.0 + azar(s, 6u)))) * (0.8 + 0.5 * raf);
 		tam = 0.07 + 0.04 * azar(s, 7u);
 	} else if (tipo == 3) {   // gotas
 		float salto = fract(f * 2.0);

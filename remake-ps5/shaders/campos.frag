@@ -30,7 +30,7 @@ layout (push_constant) uniform Empuje
 	vec4 b;       // escala A, escala B, ambiente, mitad del ancho de la mesa
 	vec4 tA;      // tinte A, mitad del fondo de la mesa
 	vec4 tB;      // tinte B, mezcla de B
-	vec4 color;   // color del campo (lineal)
+	vec4 color;   // color del campo (lineal); w > 1.5: tapete fijo (cobertura completa)
 } empuje;
 layout (set = 0, binding = 1) uniform sampler2DShadow mapaSombra;
 layout (set = 1, binding = 0) uniform sampler2DArray texturas;
@@ -144,6 +144,106 @@ Mat mezclar(Mat x, Mat y, float t)
 	return m;
 }
 
+// ---- Sogen: pasto con volumen ----
+// El tablero es UN cuadro plano: las briznas salen de recorrer el rayo de la vista por una capa de ALTO_PASTO metros
+// bajo la superficie (paralaje, PASOS_PASTO cortes) y preguntar en cada altura si hay una brizna (dos grillas de
+// briznas conicas con azar por celda: altura, grosor, giro, color). Lo que no da con ninguna llega al suelo (oscuro).
+// El viento dobla las briznas (desplazamiento ~ altura^2) con rafagas que recorren la mesa en la misma direccion que
+// las hojas de campos_particula.vert. Sombra: oclusion por la profundidad + una prueba hacia el sol (2 consultas).
+// De lejos (la brizna ocupa menos de ~1 pixel) se apaga el paralaje y queda el sombreado medio, sin parpadeo.
+const float ALTO_PASTO = 0.11;
+const int PASOS_PASTO = 10;
+const vec2 VIENTO_DIR = vec2(0.970, 0.243);   // normalize(0.6, 0.15): el viento de las hojas
+
+vec3 azar32(vec2 p)   // 3 azares por celda, sin seno (barato)
+{
+	vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+	q += dot(q, q.yxz + 33.33);
+	return fract((q.xxy + q.yzz) * q.zyx);
+}
+
+// rafagas: bandas que viajan con el viento, rotas en manchas por ruido (0 calma .. 1 rafaga)
+float rafagaSogen(vec2 q, float t)
+{
+	float banda = sin(dot(q, VIENTO_DIR) * 0.32 - t * 1.25) * 0.5 + 0.5;
+	float mancha = ruido(vec3(q * 0.18 - VIENTO_DIR * t * 0.45, t * 0.15));
+	return smoothstep(0.35, 0.95, banda * 0.6 + mancha * 0.6);
+}
+
+// una grilla de briznas: > 0 si a la altura h (0 suelo .. 1 tope de la capa) en q hay brizna. id: azar de la brizna,
+// lado: de que lado de la brizna (para la normal), alto: altura de la brizna (0..1)
+float brizna(vec2 q, float h, float celda, vec2 corr, out vec3 id, out vec2 lado, out float alto)
+{
+	vec2 c = floor(q / celda + corr);
+	vec2 f = fract(q / celda + corr);
+	id = azar32(c);
+	alto = 0.45 + 0.55 * id.z;
+	vec2 d = f - (0.2 + 0.6 * id.xy);
+	vec2 giro = normalize(vec2(id.x, fract(id.y * 7.31)) - 0.5 + 1e-4);   // giro al azar sin seno ni coseno
+	vec2 r = vec2(giro.x * d.x - giro.y * d.y, giro.y * d.x + giro.x * d.y);
+	r.y *= 0.42;   // hoja aplastada: mas ancha que gruesa
+	float ancho = 0.24 * (1.0 - h / alto);
+	lado = d;
+	return h < alto ? ancho - length(r) : -1.0;
+}
+
+void pastoSogen(vec3 p, vec3 v, float t, inout Mat m)
+{
+	float raf = rafagaSogen(p.xz, t);
+	// viento: empuje medio + rafaga + temblor fino
+	vec2 viento = VIENTO_DIR * (0.25 + 0.75 * raf) + vec2(sin(t * 3.1 + p.x * 2.3), cos(t * 2.7 + p.z * 2.1)) * 0.07 * (0.4 + raf);
+	vec3 base = m.albedo;
+	// cuanto detalle cabe: la brizna (~1.5 cm) contra lo que mide un pixel en el tapete
+	float pix = length(fwidth(p.xz));
+	float detalle = 1.0 - smoothstep(0.012, 0.03, pix);
+	vec3 rd = -v;
+	vec2 avance = rd.xz / max(-rd.y, 0.2) * ALTO_PASTO;   // corrimiento al bajar toda la capa
+	float hHit = 0.0, altoHit = 1.0;
+	vec3 idHit = vec3(0.5);
+	vec2 ladoHit = vec2(0.0), qHit = p.xz;
+	bool dio = false;
+	if (detalle > 0.0) {
+		for (int i = 0; i < PASOS_PASTO; i++) {
+			float h = 1.0 - (float(i) + 0.5) / float(PASOS_PASTO);
+			vec2 q = p.xz + avance * (1.0 - h) - viento * ALTO_PASTO * 0.9 * h * h;
+			vec3 id; vec2 lado; float alto;
+			float b = brizna(q, h, 0.055, vec2(0.0), id, lado, alto);
+			if (b <= 0.0) b = brizna(q * 1.17, h, 0.055, vec2(0.37, 0.61), id, lado, alto);
+			if (b > 0.0) { hHit = h; altoHit = alto; idHit = id; ladoHit = lado; qHit = q; dio = true; break; }
+		}
+	}
+	// color de la brizna: verde fresco / pasto seco por brizna, punta mas clara y amarilla, raiz oscura
+	vec3 tinte = mix(vec3(0.80, 1.06, 0.55), vec3(1.18, 1.02, 0.55), smoothstep(0.62, 0.95, idHit.y)) * (0.8 + 0.35 * idHit.x);
+	float punta = smoothstep(0.55, 1.0, hHit / altoHit);
+	vec3 colBrizna = base * tinte * mix(vec3(1.0), vec3(1.35, 1.28, 0.8), punta * 0.6);
+	float ao = mix(0.28, 1.0, pow(hHit, 0.75));
+	// sombra de las briznas vecinas: una consulta hacia el sol, un poco mas arriba
+	vec3 l = normalize(ubo.haciaSol.xyz);
+	if (dio) {
+		float hs = hHit + 0.3;
+		if (hs < 1.0) {
+			vec2 qs = qHit + l.xz / max(l.y, 0.25) * ALTO_PASTO * 0.3;
+			vec3 i2; vec2 l2; float a2;
+			if (brizna(qs, hs, 0.055, vec2(0.0), i2, l2, a2) > 0.0) ao *= 0.6;
+		}
+	}
+	vec3 suelo = base * vec3(0.55, 0.45, 0.3) * 0.5;   // tierra y paja entre las raices
+	vec3 albedoCerca = dio ? colBrizna : suelo;
+	float aoCerca = dio ? ao : 0.3;
+	// normal: hacia afuera de la brizna e inclinada con el viento (la rafaga peina el pasto y cambia el brillo)
+	vec2 inclina = viento * (0.35 + 0.5 * hHit);
+	vec3 nCerca = normalize(vec3(ladoHit.x * 1.4 + inclina.x, 0.8, ladoHit.y * 1.4 + inclina.y));
+	// de lejos: el promedio (mas oscuro que una punta, con la rafaga aclarando)
+	vec3 albedoLejos = base * vec3(0.95, 1.02, 0.8) * 0.85;
+	m.albedo = mix(albedoLejos, albedoCerca, detalle);
+	m.ao *= mix(0.72, aoCerca, detalle);
+	m.n = normalize(mix(normalize(m.n + vec3(viento.x, 0.0, viento.y) * 0.25), nCerca, detalle));
+	m.rugoso = mix(m.rugoso, 0.55, detalle);
+	// la rafaga deja ver el reves claro de las hojas (las bandas que se ven correr)
+	m.albedo *= 1.0 + 0.22 * raf;
+	m.albedo = mix(m.albedo, m.albedo * vec3(1.2, 1.12, 0.75), smoothstep(0.6, 0.8, ruido(vec3(p.xz * 0.6, 2.0))) * 0.35);
+}
+
 vec3 cielo(vec3 r)
 {
 	// el cielo del entorno (colores de pantalla -> lineal) para los reflejos del agua, el oro y el marmol
@@ -161,6 +261,10 @@ void main()
 	vec3 col = empuje.color.rgb;
 	float frente;
 	float cubre = cobertura(p, frente);
+	if (empuje.color.w > 1.5) {   // rama classic-extras: tapete elegido (campos.h superficie fija): toda la mesa, sin onda
+		cubre = 1.0;
+		frente = 0.0;
+	}
 	// el canto del tapete queda a la vista
 	float borde = smoothstep(0.0, 0.35, empuje.b.w - abs(p.x)) * smoothstep(0.0, 0.35, empuje.tA.w - abs(p.z));
 	float alfa = cubre * borde * empuje.b.z;
@@ -191,10 +295,8 @@ void main()
 				m.albedo = mix(m.albedo, vec3(0.75, 0.62, 0.68) * (0.85 + 0.3 * ruido(vec3(r * 60.0, h))), pluma * 0.9);
 				m.albedo = mix(m.albedo, vec3(0.35, 0.25, 0.25), raquis * 0.6);
 			}
-		} else if (var == 3) {   // Sogen: rafagas de viento que peinan el pasto
-			float ola = sin(dot(p.xz, vec2(0.55, 0.35)) - t * 1.6 + ruido(vec3(p.xz * 0.2, t * 0.1)) * 3.0);
-			m.albedo *= 0.88 + 0.22 * smoothstep(-0.2, 1.0, ola);
-			m.albedo = mix(m.albedo, m.albedo * vec3(1.25, 1.15, 0.7), smoothstep(0.6, 0.8, ruido(vec3(p.xz * 0.6, 2.0))) * 0.5);
+		} else if (var == 3) {   // Sogen: pradera con briznas de verdad (relieve por paralaje) y rafagas de viento
+			pastoSogen(p, v, t, m);
 		} else if (var == 4) {   // Montana: manchas de nieve
 			// (roca gris: sin el verde del liquen) y nieve solo en manchas chicas, con borde sucio
 			m.albedo = mix(m.albedo, vec3(dot(m.albedo, vec3(0.3, 0.59, 0.11))), 0.7);

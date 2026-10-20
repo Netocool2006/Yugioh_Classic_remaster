@@ -16,6 +16,10 @@
 // de la zona de campo de quien la activo. El juego (yugireload.cpp) lleva el estado; aqui se preparan y dibujan.
 // Coste estimado en PS5 a 4K: la capa es UN cuadro sobre el tapete (lo que se ve de el: ~40 % de la pantalla, ~6
 // lecturas de textura + 4 de sombra por pixel, ruido barato) + 2 dibujos de 60-160 particulas: < 1 ms de GPU.
+// Sogen (pastoSogen en campos.frag): briznas por paralaje, ~8 pasos medios x 2 consultas de celda (azar sin seno,
+// sin texturas) hasta dar con una brizna (medido con una simulacion de la misma funcion: 60-86 % de los rayos dan
+// con una, segun la altura de la camara) + 1 consulta de sombra: ~500 operaciones mas por pixel, sin lecturas de
+// textura nuevas; estimado ~0.2-0.3 ms mas a 4K solo con Sogen activo. De lejos (brizna < 1 pixel) no recorre.
 #pragma once
 
 #include <array>
@@ -156,7 +160,8 @@ public:
 	}
 
 	// la capa del tablero (despues del tapete). amb: 0..1 (la onda la lleva ubo.bosque); origen: la zona de la carta
-	void superficie(VkCommandBuffer cmd, VkDescriptorSet set0, const Campo& c, float amb)
+	// (fija: rama classic-extras, el tapete elegido: cubre toda la mesa sin la onda de la carta)
+	void superficie(VkCommandBuffer cmd, VkDescriptorSet set0, const Campo& c, float amb, bool fija = false)
 	{
 		dibujosCuadro = 0;
 		if (!listo || c.superficie == S_NADA || amb <= 0.0f) return;
@@ -164,7 +169,7 @@ public:
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pSuperficie);
 		struct { V4 a, b, tA, tB, color; } e{
 			V4((float)c.superficie, (float)c.variante, (float)(c.capaA * 2), (float)(c.capaB * 2)),
-			V4(c.escalaA, c.escalaB, amb, hx), V4(c.tinteA, hz), V4(c.tinteB, c.mezclaB), V4(c.color, 1.0f)
+			V4(c.escalaA, c.escalaB, amb, hx), V4(c.tinteA, hz), V4(c.tinteB, c.mezclaB), V4(c.color, fija ? 2.0f : 1.0f)
 		};
 		vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(e), &e);
 		vkCmdDraw(cmd, 6, 1, 0, 0);

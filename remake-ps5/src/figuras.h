@@ -53,6 +53,93 @@
 			{ "kuriboh", 0.907142f, CuerpoFig::Compacto, AtaqueFig::Embestida, { 0.0f, 0.5f, 0.4f }, { 1.2f, 0.7f, 0.3f }, { 1.0f, 0.9f, 0.7f }, false, 0, 0, 0, 0, 0 },
 			{ "silver_fang", 1.958502f, CuerpoFig::Cuadrupedo, AtaqueFig::Embestida, { 0.0f, 0.7f, 0.25f }, { 0.8f, 0.9f, 1.2f }, { 1.0f, 1.0f, 1.0f }, false, 0, 0, 0, 0, 0 },
 			{ "summoned_skull", 3.842787f, CuerpoFig::Bipedo, AtaqueFig::Rayo, { 0.0f, 0.86f, 0.12f }, { 1.25f, 1.05f, 0.35f }, { 1.0f, 1.0f, 0.95f }, false, 0, 0, 0, 0, 0 },
+			// lote TRELLIS de 2026-10-19 (rama classic-figuras-lote): modelos normalizados a 1 de alto, pies en 0, de frente +Z;
+			// escala = alto logico (tamanos.json) x 2.6/1.8, sin pasar el ancho maximo; con esqueleto Meshy (_anim.glb) miden 1.8
+			{ "alligator_s_sword", 2.7444f, CuerpoFig::Bipedo, AtaqueFig::Espada, { 0.064f, 0.364f, 0.4f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.74 m de alto
+			{ "alligator_s_sword_dragon", 3.1929f, CuerpoFig::Alado, AtaqueFig::Aliento, { -0.01f, 0.346f, 0.658f }, { 1.7f, 0.45f, 0.1f }, { 1.0f, 0.85f, 0.5f }, false, 0, 0, 0, 0, 0 },   // 3.19 m de alto
+			{ "big_shield_gardna", 2.7444f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { 0.041f, 0.502f, 0.278f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.74 m de alto
+			{ "blue_eyes_ultimate_dragon", 3.8703f, CuerpoFig::Alado, AtaqueFig::Aliento, { 0.229f, 0.548f, 0.528f }, { 0.35f, 0.65f, 1.7f }, { 0.9f, 0.96f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 3.87 m de alto
+			{ "buster_blader", 2.8889f, CuerpoFig::Bipedo, AtaqueFig::Espada, { -0.105f, 0.586f, 0.256f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.89 m de alto
+			{ "curse_of_dragon", 3.7556f, CuerpoFig::Alado, AtaqueFig::Aliento, { -0.002f, 0.656f, 0.555f }, { 1.7f, 0.45f, 0.1f }, { 1.0f, 0.85f, 0.5f }, false, 0, 0, 0, 0, 0 },   // 3.76 m de alto
+			{ "cyber_jar", 1.7333f, CuerpoFig::Compacto, AtaqueFig::Embestida, { -0.013f, 0.447f, 0.499f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 1.73 m de alto
+			{ "dark_elf", 2.4556f, CuerpoFig::Bipedo, AtaqueFig::Magia, { 0.026f, 0.515f, 0.139f }, { 0.7f, 0.25f, 1.5f }, { 0.95f, 0.85f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 2.46 m de alto
+			{ "exodia_the_forbidden_one", 3.7556f, CuerpoFig::Bipedo, AtaqueFig::Rayo, { 0.0f, 0.62f, 0.2f }, { 1.5f, 1.1f, 0.35f }, { 1.0f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 3.76 m de alto
+			{ "flame_swordsman", 1.5247f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { 0.0f, 1.2667f, 0.3f }, { 1.7f, 0.45f, 0.1f }, { 1.0f, 0.85f, 0.5f }, false, 0, 0, 0, 0, 0 },   // esqueleto Meshy
+			{ "gaia", 3.3316f, CuerpoFig::Cuadrupedo, AtaqueFig::Espada, { -0.126f, 0.528f, 0.57f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.33 m de alto
+			{ "gaia_the_dragon_champion", 3.4323f, CuerpoFig::Alado, AtaqueFig::Aliento, { 0.002f, 0.581f, 0.667f }, { 0.5f, 1.4f, 0.4f }, { 0.95f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 3.43 m de alto
+			{ "gearfried_the_iron_knight", 2.8889f, CuerpoFig::Bipedo, AtaqueFig::Espada, { 0.027f, 0.734f, 0.118f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.89 m de alto
+			{ "gemini_elf", 2.4556f, CuerpoFig::Bipedo, AtaqueFig::Magia, { 0.0f, 0.55f, 0.25f }, { 0.5f, 1.4f, 0.4f }, { 0.95f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 2.46 m de alto
+			{ "great_moth", 3.4213f, CuerpoFig::Alado, AtaqueFig::Embestida, { -0.116f, 0.583f, 0.614f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.42 m de alto
+			{ "harpie_lady", 2.5278f, CuerpoFig::Alado, AtaqueFig::Embestida, { -0.049f, 0.598f, 0.142f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.53 m de alto
+			{ "harpie_lady_sisters", 1.9678f, CuerpoFig::Alado, AtaqueFig::Embestida, { 0.0f, 0.65f, 0.15f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 1.97 m de alto (3 hermanas TRELLIS unidas en fila, 2.2 de ancho)
+			{ "harpie_s_pet_dragon", 3.3445f, CuerpoFig::Alado, AtaqueFig::Aliento, { 0.049f, 0.349f, 0.652f }, { 1.7f, 0.45f, 0.1f }, { 1.0f, 0.85f, 0.5f }, false, 0, 0, 0, 0, 0 },   // 3.34 m de alto
+			{ "insect_queen", 3.4667f, CuerpoFig::Alado, AtaqueFig::Embestida, { -0.015f, 0.585f, 0.323f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.47 m de alto
+			{ "labyrinth_wall", 1.5296f, CuerpoFig::Compacto, AtaqueFig::Embestida, { 0.401f, 0.407f, 1.11f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 1.53 m de alto
+			{ "left_arm_of_the_forbidden_one", 2.0222f, CuerpoFig::Compacto, AtaqueFig::Embestida, { -0.127f, 0.336f, 0.347f }, { 1.5f, 1.1f, 0.35f }, { 1.0f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 2.02 m de alto
+			{ "left_leg_of_the_forbidden_one", 2.0222f, CuerpoFig::Compacto, AtaqueFig::Embestida, { -0.01f, 0.898f, 0.229f }, { 1.5f, 1.1f, 0.35f }, { 1.0f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 2.02 m de alto
+			{ "panther_warrior", 2.7444f, CuerpoFig::Bipedo, AtaqueFig::Espada, { -0.001f, 0.491f, 0.46f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.74 m de alto
+			{ "perfectly_ultimate_great_moth", 4.0734f, CuerpoFig::Alado, AtaqueFig::Embestida, { -0.01f, 0.481f, 0.453f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 4.04 m de alto
+			{ "red_eyes_black_metal_dragon", 4.1889f, CuerpoFig::Alado, AtaqueFig::Aliento, { 0.036f, 0.498f, 0.539f }, { 1.7f, 0.45f, 0.1f }, { 1.0f, 0.85f, 0.5f }, false, 0, 0, 0, 0, 0 },   // 4.19 m de alto
+			{ "right_arm_of_the_forbidden_one", 2.0222f, CuerpoFig::Compacto, AtaqueFig::Embestida, { -0.064f, 0.68f, 0.494f }, { 1.5f, 1.1f, 0.35f }, { 1.0f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 2.02 m de alto
+			{ "right_leg_of_the_forbidden_one", 2.0222f, CuerpoFig::Compacto, AtaqueFig::Embestida, { 0.01f, 0.898f, 0.229f }, { 1.5f, 1.1f, 0.35f }, { 1.0f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 2.02 m de alto (espejo de left_leg)
+			{ "rocket_warrior", 2.1667f, CuerpoFig::Bipedo, AtaqueFig::Espada, { -0.023f, 0.523f, 0.085f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.17 m de alto
+			{ "sangan", 1.3000f, CuerpoFig::Compacto, AtaqueFig::Embestida, { 0.187f, 0.694f, 0.328f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 1.30 m de alto
+			{ "swordsman_of_landstar", 0.8827f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { 0.0f, 0.7333f, 0.3f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // esqueleto Meshy
+			{ "thousand_dragon", 2.3111f, CuerpoFig::Cuadrupedo, AtaqueFig::Aliento, { 0.074f, 0.252f, 0.708f }, { 1.7f, 0.45f, 0.1f }, { 1.0f, 0.85f, 0.5f }, false, 0, 0, 0, 0, 0 },   // 2.31 m de alto
+			{ "time_wizard", 1.4444f, CuerpoFig::Compacto, AtaqueFig::Embestida, { 0.0f, 0.868f, 0.301f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 1.44 m de alto
+			{ "twin_headed_thunder_dragon", 2.6633f, CuerpoFig::Cuadrupedo, AtaqueFig::Rayo, { 0.0f, 0.45f, 0.7f }, { 1.25f, 1.05f, 0.35f }, { 1.0f, 1.0f, 0.95f }, false, 0, 0, 0, 0, 0 },   // 2.66 m de alto
+			{ "vorse_raider", 2.8889f, CuerpoFig::Bipedo, AtaqueFig::Espada, { -0.072f, 0.748f, 0.241f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.89 m de alto
+			{ "witch_of_the_black_forest", 1.4043f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { 0.0f, 1.1667f, 0.3f }, { 0.7f, 0.25f, 1.5f }, { 0.95f, 0.85f, 1.0f }, false, 0, 0, 0, 0, 0 },   // esqueleto Meshy
+			// lote TRELLIS de cartas firma de 2026-10-19 (rama classic-figuras-firma): mismas reglas que el lote anterior;
+			// los dioses egipcios mas grandes (ancho maximo 5.0-5.6 m, pueden pasar sobre el espacio entre casillas)
+			{ "amphibious_bugroth", 2.6757f, CuerpoFig::Compacto, AtaqueFig::Rayo, { 0.0f, 0.62f, 0.55f }, { 0.35f, 0.65f, 1.7f }, { 0.9f, 0.96f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 2.68 m de alto
+			{ "ape_fighter", 2.7444f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { 0.128f, 0.25f, 0.216f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.74 m de alto
+			{ "arcana_knight_joker", 2.8889f, CuerpoFig::Bipedo, AtaqueFig::Espada, { 0.156f, 0.551f, 0.185f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.89 m de alto
+			{ "armor_breaker", 1.7333f, CuerpoFig::Compacto, AtaqueFig::Embestida, { 0.143f, 0.577f, 0.406f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 1.73 m de alto
+			{ "berfomet", 3.1778f, CuerpoFig::Alado, AtaqueFig::Embestida, { 0.15f, 0.894f, 0.414f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "chimera_the_flying_mythical_beast", 3.1778f, CuerpoFig::Cuadrupedo, AtaqueFig::Embestida, { -0.076f, 0.431f, 0.502f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "copycat", 1.8778f, CuerpoFig::Bipedo, AtaqueFig::Magia, { 0.0f, 0.78f, 0.25f }, { 0.35f, 0.65f, 1.7f }, { 0.9f, 0.96f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 1.88 m de alto
+			{ "cyber_commander", 2.6000f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { 0.072f, 0.879f, 0.082f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.60 m de alto
+			{ "diabound_kernel", 3.7313f, CuerpoFig::Compacto, AtaqueFig::Rayo, { -0.204f, 0.898f, 0.504f }, { 0.7f, 0.25f, 1.5f }, { 0.95f, 0.85f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 3.73 m de alto
+			{ "fortress_whale", 3.1177f, CuerpoFig::Compacto, AtaqueFig::Embestida, { -0.005f, 0.898f, 0.627f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.12 m de alto
+			{ "gaap_the_divine_soldier", 3.1778f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { -0.134f, 0.3f, 0.135f }, { 0.7f, 0.25f, 1.5f }, { 0.95f, 0.85f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "gilford_the_lightning", 2.8889f, CuerpoFig::Bipedo, AtaqueFig::Espada, { 0.0f, 0.606f, 0.278f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.89 m de alto
+			{ "graveyard_and_the_hand_of_invitation", 2.0222f, CuerpoFig::Compacto, AtaqueFig::Embestida, { -0.056f, 0.599f, 0.268f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.02 m de alto
+			{ "guardian_dreadscythe", 2.8889f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { 0.14f, 0.57f, 0.228f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.89 m de alto
+			{ "guardian_eatos", 2.7444f, CuerpoFig::Alado, AtaqueFig::Magia, { 0.0f, 0.62f, 0.2f }, { 0.35f, 0.65f, 1.7f }, { 0.9f, 0.96f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 2.74 m de alto
+			{ "happy_lover", 1.4444f, CuerpoFig::Alado, AtaqueFig::Rayo, { 0.0f, 0.737f, 0.294f }, { 1.6f, 0.4f, 1.0f }, { 1.0f, 0.9f, 0.95f }, false, 0, 0, 0, 0, 0 },   // 1.44 m de alto
+			{ "jack_s_knight", 2.7444f, CuerpoFig::Bipedo, AtaqueFig::Espada, { 0.015f, 0.508f, 0.165f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.74 m de alto
+			{ "jinzo", 2.7444f, CuerpoFig::Bipedo, AtaqueFig::Rayo, { 0.0f, 0.62f, 0.15f }, { 0.7f, 0.25f, 1.5f }, { 0.95f, 0.85f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 2.74 m de alto
+			{ "jinzo_returner", 1.2840f, CuerpoFig::Bipedo, AtaqueFig::Rayo, { 0.0f, 1.0667f, 0.3f }, { 0.7f, 0.25f, 1.5f }, { 0.95f, 0.85f, 1.0f }, false, 0, 0, 0, 0, 0 },   // esqueleto Meshy
+			{ "kairyu_shin", 3.1338f, CuerpoFig::Compacto, AtaqueFig::Aliento, { 0.121f, 0.466f, 0.611f }, { 0.35f, 0.65f, 1.7f }, { 0.9f, 0.96f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 3.13 m de alto
+			{ "king_s_knight", 2.7444f, CuerpoFig::Bipedo, AtaqueFig::Espada, { 0.128f, 0.543f, 0.244f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.74 m de alto
+			{ "magician_of_black_chaos", 2.8889f, CuerpoFig::Bipedo, AtaqueFig::Magia, { 0.0f, 0.62f, 0.18f }, { 0.7f, 0.25f, 1.5f }, { 0.95f, 0.85f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 2.89 m de alto
+			{ "magician_of_faith", 2.1667f, CuerpoFig::Bipedo, AtaqueFig::Magia, { 0.214f, 0.838f, 0.259f }, { 1.5f, 1.1f, 0.35f }, { 1.0f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 2.17 m de alto
+			{ "magician_s_valkyria", 2.3111f, CuerpoFig::Bipedo, AtaqueFig::Magia, { -0.335f, 0.532f, 0.104f }, { 0.5f, 1.4f, 0.4f }, { 0.95f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 2.31 m de alto
+			{ "maiden_with_eyes_of_blue", 2.3111f, CuerpoFig::Bipedo, AtaqueFig::Magia, { 0.0f, 0.6f, 0.2f }, { 0.35f, 0.65f, 1.7f }, { 0.9f, 0.96f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 2.31 m de alto
+			{ "marshmallon", 1.1556f, CuerpoFig::Compacto, AtaqueFig::Embestida, { 0.0f, 0.329f, 0.468f }, { 1.6f, 0.4f, 1.0f }, { 1.0f, 0.9f, 0.95f }, false, 0, 0, 0, 0, 0 },   // 1.16 m de alto
+			{ "megazowler", 2.5303f, CuerpoFig::Cuadrupedo, AtaqueFig::Embestida, { -0.148f, 0.46f, 0.734f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.53 m de alto
+			{ "mystical_beast_of_serket", 2.2683f, CuerpoFig::Cuadrupedo, AtaqueFig::Embestida, { -0.339f, 0.252f, 0.841f }, { 0.7f, 0.25f, 1.5f }, { 0.95f, 0.85f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 2.27 m de alto
+			{ "obelisk_the_tormentor", 5.2000f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { 0.029f, 0.581f, 0.171f }, { 0.35f, 0.65f, 1.7f }, { 0.9f, 0.96f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 5.20 m de alto
+			{ "orgoth_the_relentless", 3.1778f, CuerpoFig::Bipedo, AtaqueFig::Espada, { -0.135f, 0.699f, 0.189f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "prinzessin", 2.3111f, CuerpoFig::Bipedo, AtaqueFig::Magia, { -0.128f, 0.771f, 0.336f }, { 1.6f, 0.4f, 1.0f }, { 1.0f, 0.9f, 0.95f }, false, 0, 0, 0, 0, 0 },   // 2.31 m de alto
+			{ "pumpkin_carriage", 2.3111f, CuerpoFig::Compacto, AtaqueFig::Embestida, { -0.087f, 0.354f, 0.52f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.31 m de alto
+			{ "queen_s_knight", 2.6000f, CuerpoFig::Bipedo, AtaqueFig::Espada, { 0.02f, 0.586f, 0.124f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 2.60 m de alto
+			{ "satellite_cannon", 2.3111f, CuerpoFig::Compacto, AtaqueFig::Rayo, { 0.0f, 0.492f, 0.736f }, { 1.25f, 1.05f, 0.35f }, { 1.0f, 1.0f, 0.95f }, false, 0, 0, 0, 0, 0 },   // 2.31 m de alto
+			{ "slifer_the_sky_dragon", 3.7716f, CuerpoFig::Alado, AtaqueFig::Rayo, { 0.073f, 0.576f, 0.726f }, { 1.25f, 1.05f, 0.35f }, { 1.0f, 1.0f, 0.95f }, false, 0, 0, 0, 0, 0 },   // 3.77 m de alto
+			{ "sword_arm_of_dragon", 3.0207f, CuerpoFig::Cuadrupedo, AtaqueFig::Embestida, { 0.122f, 0.459f, 0.629f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.02 m de alto
+			{ "the_white_stone_of_legend", 1.1556f, CuerpoFig::Compacto, AtaqueFig::Embestida, { -0.037f, 0.43f, 0.306f }, { 0.35f, 0.65f, 1.7f }, { 0.9f, 0.96f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 1.16 m de alto
+			{ "the_winged_dragon_of_ra", 4.5939f, CuerpoFig::Alado, AtaqueFig::Aliento, { -0.05f, 0.68f, 0.3f }, { 1.5f, 1.1f, 0.35f }, { 1.0f, 1.0f, 0.85f }, false, 0, 0, 0, 0, 0 },   // 4.59 m de alto
+			{ "toon_dark_magician_girl", 2.0222f, CuerpoFig::Compacto, AtaqueFig::Magia, { 0.11f, 0.77f, 0.504f }, { 1.6f, 0.4f, 1.0f }, { 1.0f, 0.9f, 0.95f }, false, 0, 0, 0, 0, 0 },   // 2.02 m de alto
+			{ "ultimate_tyranno", 4.0444f, CuerpoFig::Bipedo, AtaqueFig::Embestida, { 0.158f, 0.267f, 0.442f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 4.04 m de alto
+			{ "valkyrie_brunhilde", 3.3222f, CuerpoFig::Cuadrupedo, AtaqueFig::Espada, { 0.068f, 0.882f, 0.561f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.32 m de alto
+			{ "valkyrie_dritte", 3.1778f, CuerpoFig::Cuadrupedo, AtaqueFig::Espada, { 0.013f, 0.656f, 0.501f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "valkyrie_erste", 3.1778f, CuerpoFig::Cuadrupedo, AtaqueFig::Espada, { 0.002f, 0.561f, 0.498f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "valkyrie_funfte", 3.1778f, CuerpoFig::Cuadrupedo, AtaqueFig::Espada, { 0.112f, 0.753f, 0.387f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "valkyrie_sechste", 3.1778f, CuerpoFig::Cuadrupedo, AtaqueFig::Espada, { -0.175f, 0.659f, 0.436f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "valkyrie_vierte", 3.1778f, CuerpoFig::Cuadrupedo, AtaqueFig::Espada, { 0.022f, 0.537f, 0.499f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "valkyrie_zweite", 3.1778f, CuerpoFig::Cuadrupedo, AtaqueFig::Espada, { 0.033f, 0.731f, 0.546f }, { 1.0f, 0.8f, 0.5f }, { 1.0f, 1.0f, 0.9f }, false, 0, 0, 0, 0, 0 },   // 3.18 m de alto
+			{ "viser_des", 2.3111f, CuerpoFig::Compacto, AtaqueFig::Embestida, { 0.12f, 0.556f, 0.173f }, { 0.7f, 0.25f, 1.5f }, { 0.95f, 0.85f, 1.0f }, false, 0, 0, 0, 0, 0 },   // 2.31 m de alto
 		};
 		for (const DatosFigura& d : TABLA) {
 			if (slug == d.slug) return &d;
@@ -434,6 +521,7 @@
 			posarClip(f.modelo, f.reposo, tiempo + fase, true);
 			// en defensa: el punto de mas cobertura de su clip, respirando
 			if (f.defensa >= 0 && e.pesoDef > 0.0f) clipEncima(f, f.defensa, 0.5f - 0.03f * (0.5f + 0.5f * sinf(tiempo * 2.6f)), e.pesoDef);
+			clipEntradaClave(zona, f);   // rama classic-cartas-clave: con esqueleto, la entrada es su clip de ataque
 			if (hayAtaque()) {
 				const float tg = tAtaque, v = velocidadAtaque();
 				const float real = tg / v, impactoReal = T_IMPACTO / v;
@@ -497,6 +585,7 @@
 		dis = ap < 1.0f ? -(1.0f - ap) : 0.0f;
 		escala *= 0.75f + 0.25f * ap;
 		holo = 0.28f + 1.4f * (1.0f - ap);
+		poseEntradaClave(z, f, giro, escala, vuelo, holo);   // rama classic-cartas-clave: la entrada de una carta clave (entrada_clave_juego.h)
 		if (hayAtaque() && (z == zonaAtacante || z == zonaObjetivo)) {
 			const float tg = tAtaque;
 			const int otro = z == zonaAtacante ? zonaObjetivo : zonaAtacante;

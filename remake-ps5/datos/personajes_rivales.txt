@@ -72,8 +72,8 @@ M|ryou_bakura|2|element_doom element_doom element_soldier element_soldier morphi
 X|ryou_bakura|2|
 R|mako|3|paciente|personaje:reino|Mako Tsunami|Mako Tsunami|¡El mar es mi aliado!|The sea is my ally!
 V|mako|0|Océano|Ocean
-M|mako|0|freezing_beast freezing_beast mermaid_knight revival_jam star_boy the_legendary_fisherman the_legendary_fisherman tribe_infecting_virus unshaven_angler unshaven_angler fire_kraken fire_kraken great_white great_white hyosube island_turtle jellyfish kairyu_shin kairyu_shin fortress_whale fortress_whale a_legendary_ocean a_legendary_ocean creature_swap fortress_whale_s_oath fortress_whale_s_oath kaiser_colosseum mystical_space_typhoon red_medicine swords_of_revealing_light umi umi ceasefire fake_trap house_of_adhesive_tape reinforcements sakuretsu_armor tornado_wall ultimate_offering waboku
-X|mako|0|
+M|mako|0|freezing_beast freezing_beast mermaid_knight star_boy the_legendary_fisherman the_legendary_fisherman tribe_infecting_virus unshaven_angler unshaven_angler fire_kraken fire_kraken great_white great_white ground_attacker_bugroth ground_attacker_bugroth jellyfish kairyu_shin kairyu_shin sentinel_of_the_seas fortress_whale fortress_whale a_legendary_ocean a_legendary_ocean creature_swap fortress_whale_s_oath fortress_whale_s_oath kaiser_colosseum mystical_space_typhoon polymerization polymerization swords_of_revealing_light umi umi ceasefire fake_trap house_of_adhesive_tape sakuretsu_armor tornado_wall ultimate_offering waboku
+X|mako|0|amphibious_bugroth
 V|mako|1|Leviatán|Leviathan
 M|mako|1|amphibious_bugroth_mk_3 amphibious_bugroth_mk_3 cure_mermaid cure_mermaid levia_dragon_daedalus mermaid_knight mother_grizzly mother_grizzly serpentine_princess tribe_infecting_virus unshaven_angler giga_gagagigo great_white great_white skull_mariner skull_mariner takriminos terrorking_salmon a_legendary_ocean dian_keto_the_cure_master fissure hinotama pot_of_greed red_medicine scapegoat sparks stop_defense swords_of_revealing_light umi bottomless_trap_hole castle_walls eatgaboon enchanted_javelin fake_trap jar_of_greed reinforcements torrential_tribute trap_hole ultimate_offering waboku
 X|mako|1|
@@ -355,7 +355,7 @@ V|leon|0|Cuento de hadas|Fairy Tale
 M|leon|0|a_man_with_wdjat asura_priest chaos_command_magician dancing_fairy dark_magician_girl frontier_wiseman frontier_wiseman hysteric_fairy kycoo_the_ghost_destroyer maha_vailo prinzessin prinzessin pumpkin_carriage pumpkin_carriage skilled_white_magician the_agent_of_judgment_saturn zolga cosmo_queen mystical_elf neo_the_magic_swordsman rogue_doll creature_swap dian_keto_the_cure_master elf_s_light gingerbread_house glass_slippers glass_slippers golden_castle_of_stromberg golden_castle_of_stromberg luminous_spark pot_of_greed reinforcement_of_the_army snatch_steal soul_of_the_pure bottomless_trap_hole castle_walls dust_tornado enchanted_javelin sakuretsu_armor trap_dustshoot
 X|leon|0|
 V|leon|1|Valquirias de su hermano|His Brother's Valkyries
-M|leon|1|agido airknight_parshath asura_priest dancing_fairy element_valkyrie hysteric_fairy kelbek mudora prinzessin pumpkin_carriage the_agent_of_creation_venus the_agent_of_judgment_saturn valkyrie_dritte valkyrie_zweite zolga zolga shining_abyss wingweaver book_of_moon brain_control delinquent_duo dian_keto_the_cure_master elf_s_light fissure glass_slippers hinotama luminous_spark scapegoat soul_of_the_pure castle_walls dust_tornado eatgaboon house_of_adhesive_tape jar_of_greed mirror_force return_from_the_different_dimension trap_hole ultimate_offering waboku waboku
+M|leon|1|agido asura_priest dancing_fairy element_valkyrie hysteric_fairy kelbek mudora prinzessin pumpkin_carriage the_agent_of_creation_venus the_agent_of_judgment_saturn valkyrie_dritte valkyrie_erste valkyrie_zweite zolga zolga shining_abyss wingweaver book_of_moon brain_control delinquent_duo dian_keto_the_cure_master elf_s_light glass_slippers hinotama luminous_spark mischief_of_the_time_goddess ride_of_the_valkyries scapegoat soul_of_the_pure castle_walls dust_tornado eatgaboon house_of_adhesive_tape mirror_force return_from_the_different_dimension trap_hole ultimate_offering waboku waboku
 X|leon|1|
 V|leon|2|Castillo dorado|Golden Castle
 M|leon|2|asura_priest helping_robo_for_combat homunculus_the_alchemic_being hysteric_fairy hysteric_fairy kaiser_glider ninja_grandmaster_sasuke ninja_grandmaster_sasuke prinzessin pumpkin_carriage reflect_bounder the_agent_of_judgment_saturn zaborg_the_thunder_monarch blue_eyes guardian_of_the_throne_room neo_the_magic_swordsman shining_abyss x_head_cannon x_head_cannon creature_swap dian_keto_the_cure_master enemy_controller glass_slippers golden_castle_of_stromberg golden_castle_of_stromberg mystical_space_typhoon nobleman_of_crossout polymerization red_medicine sparks swords_of_revealing_light castle_walls ceasefire house_of_adhesive_tape magic_jammer ring_of_destruction sakuretsu_armor trap_hole ultimate_offering waboku
@@ -471,6 +471,7 @@ V|yami_yugi|2|Reino de los Duelistas|Duelist Kingdom
 M|yami_yugi|2|catapult_turtle chaos_command_magician kuriboh zombyra_the_dark zombyra_the_dark alpha_the_magnet_warrior beaver_warrior beta_the_magnet_warrior celtic_guardian celtic_guardian curse_of_dragon dark_magician dark_magician feral_imp gaia gamma_the_magnet_warrior mystical_elf silver_fang summoned_skull book_of_secret_arts book_of_secret_arts delinquent_duo heavy_storm horn_of_the_unicorn magical_labyrinth mystical_moon nobleman_of_crossout polymerization pot_of_greed reinforcement_of_the_army smashing_ground swords_of_revealing_light yami bottomless_trap_hole compulsory_evacuation_device dust_tornado sakuretsu_armor sakuretsu_armor torrential_tribute trap_dustshoot
 X|yami_yugi|2|gaia_the_dragon_champion
 F|alligator_s_sword_dragon|baby_dragon+alligator_s_sword
+F|amphibious_bugroth|ground_attacker_bugroth+sentinel_of_the_seas
 F|arcana_knight_joker|queen_s_knight+jack_s_knight+king_s_knight
 F|black_skull_dragon|summoned_skull+red_eyes
 F|blue_eyes_ultimate_dragon|blue_eyes+blue_eyes+blue_eyes
@@ -520,7 +521,7 @@ T|the_masked_beast|curse_of_the_masked_beast
 # ryou_bakura       n2 v0 paciente   40 cartas, 21 monstruos (ATK medio 1302), 10 magias,  9 trampas, 0 fusiones,  0 firma
 # ryou_bakura       n2 v1 paciente   40 cartas, 21 monstruos (ATK medio 1504), 11 magias,  8 trampas, 0 fusiones,  0 firma
 # ryou_bakura       n2 v2 paciente   40 cartas, 18 monstruos (ATK medio 1438), 10 magias, 12 trampas, 0 fusiones,  0 firma
-# mako              n3 v0 paciente   40 cartas, 21 monstruos (ATK medio 1588), 11 magias,  8 trampas, 0 fusiones,  3 firma
+# mako              n3 v0 paciente   40 cartas, 21 monstruos (ATK medio 1597), 12 magias,  7 trampas, 1 fusiones,  5 firma
 # mako              n3 v1 paciente   40 cartas, 18 monstruos (ATK medio 1675), 11 magias, 11 trampas, 0 fusiones,  0 firma
 # mako              n3 v2 paciente   40 cartas, 18 monstruos (ATK medio 1480), 13 magias,  9 trampas, 0 fusiones,  3 firma
 # panik             n3 v0 defensivo  40 cartas, 23 monstruos (ATK medio 1491), 10 magias,  7 trampas, 0 fusiones,  0 firma
@@ -605,7 +606,7 @@ T|the_masked_beast|curse_of_the_masked_beast
 # dartz             n7 v1 control    40 cartas, 20 monstruos (ATK medio 1950), 14 magias,  6 trampas, 0 fusiones,  3 firma
 # dartz             n7 v2 control    40 cartas, 20 monstruos (ATK medio 2127), 12 magias,  8 trampas, 0 fusiones,  2 firma
 # leon              n5 v0 paciente   40 cartas, 21 monstruos (ATK medio 1483), 13 magias,  6 trampas, 0 fusiones,  5 firma
-# leon              n5 v1 paciente   40 cartas, 18 monstruos (ATK medio 1541), 11 magias, 11 trampas, 0 fusiones,  5 firma
+# leon              n5 v1 paciente   40 cartas, 18 monstruos (ATK medio 1525), 12 magias, 10 trampas, 0 fusiones,  8 firma
 # leon              n5 v2 paciente   40 cartas, 19 monstruos (ATK medio 1739), 12 magias,  9 trampas, 1 fusiones,  5 firma
 # zigfried          n6 v0 farolero   40 cartas, 21 monstruos (ATK medio 1509), 10 magias,  9 trampas, 0 fusiones,  9 firma
 # zigfried          n6 v1 farolero   40 cartas, 18 monstruos (ATK medio 1811), 14 magias,  8 trampas, 0 fusiones,  4 firma

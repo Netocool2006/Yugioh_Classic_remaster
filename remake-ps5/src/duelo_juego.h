@@ -20,7 +20,12 @@
 	std::string bloqueoAntes{ "?" };   // (rama classic-arreglos: el motivo del bloqueo que ya se escribio)
 	bool mesaPendiente{ false };   // hay sucesos presentados que la mesa todavia no refleja
 	float esperaEfecto{ 0.0f };    // rama classic-efectos: s que faltan de la animacion de una activacion (la cadena se ve en orden)
+	// rama classic-duelo-arreglos: robar animado. ocultas[lado]: cartas del final de la mano del duelo que la mesa todavia
+	// no muestra (llegan con su animacion); reparto: cartas del reparto inicial que faltan (alternando desde repartoLado)
+	int ocultas[2]{ 0, 0 };
+	int reparto{ 0 }, repartoLado{ 0 };
 	uint32_t semillaRival{ 1 };
+	int rivalIdx{ -1 };   // rama classic-menus: duelo libre, el rival elegido dentro del nivel (-1 = uno al azar)
 	std::string rutaProgreso;
 	std::string musicaActual;   // (rama classic-audio: no reiniciar la pista que ya suena)
 	using VD = control::VistaDuelo;
@@ -39,8 +44,10 @@
 	{
 		if (ctl.vista.pantalla == VD::DUELO) {
 			const int lpMin = std::min(dueloIA.l[0].lp, dueloIA.l[1].lp);
-			musica(lpMin <= LP_TENSO ? "musica_duelo_tensa" : (semillaRival & 2u) && sonido.hay("musica_duelo_2") ? "musica_duelo_2" : "musica_duelo");
-		} else if (ctl.vista.pantalla == VD::ELEGIR_RIVAL) {
+			// (rama classic-resultado: con la carta clave del jugador en juego, su musica hasta la tensa)
+			musica(lpMin <= LP_TENSO ? "musica_duelo_tensa" : claveSonando && sonido.hay("musica_carta_clave") ? "musica_carta_clave"
+			       : (semillaRival & 2u) && sonido.hay("musica_duelo_2") ? "musica_duelo_2" : "musica_duelo");
+		} else if (ctl.vista.pantalla == VD::ELEGIR_RIVAL || ctl.vista.pantalla == VD::MENU || ctl.vista.pantalla == VD::PORTADA) {
 			musica("musica_menu");
 		}
 	}
@@ -80,6 +87,9 @@
 			coleccion.desbloquear(historia.vencidos);
 			ctl.vista.saga = historia.sagaActual();
 			ctl.vista.idx = -1;   // (el primero sin vencer)
+			// rama classic-historia: dialogos (historia_dialogos.h) y el Modo Desafio (premio del final)
+			historia_dialogos::base().leer(getAssetPath() + "ui/");
+			historia_dialogos::desafioDisponible() = historia.finalVisto || historia.completa();
 		}
 		ctl.duelo = &dueloIA;
 		ctl.jugar = [this](const ia::Jugada& j) { return jugarJugador(j); };
@@ -110,21 +120,22 @@
 	// mantener OPTIONS 2 s sigue siendo la ventana de Ajustes de la plantilla (parche_base.py), asi que un toque nunca
 	// abre los Ajustes por accidente: desde la pausa se abren a proposito ("Ajustes") y un OPTIONS corto los cierra.
 	// Mientras esta abierta el duelo se detiene (avanzarDueloIA no corre: el rival no juega). Opciones:
-	//  - en el duelo: Continuar, Ajustes, Construir mazo, Abandonar duelo (cuenta como derrota) y Salir al menu
-	//    principal (la pantalla de elegir rival; el duelo en curso se descarta sin contar)
-	//  - en elegir rival / resultado: Continuar, Modo historia o Duelo libre (el otro modo), Ajustes y Construir mazo
-	enum AccionPausa { PA_CONTINUAR = 0, PA_AJUSTES, PA_CONSTRUIR, PA_ABANDONAR, PA_MENU_PRINCIPAL, PA_HISTORIA, PA_DUELO_LIBRE };
+	//  - en el duelo: Continuar, Construir mazo, Abandonar duelo (cuenta como derrota) y Salir al menu principal (el
+	//    menu principal de menu_principal.h; el duelo en curso se descarta sin contar)
+	//  - en elegir rival / resultado: Continuar, Modo historia o Duelo libre (el otro modo), Construir mazo y Salir al
+	//    menu principal
+	// rama classic-menus: sin "Ajustes" (FPS, render... son de desarrollo: menu_principal.h, vigilarAjustes)
+	enum AccionPausa { PA_CONTINUAR = 0, PA_AJUSTES, PA_CONSTRUIR, PA_ABANDONAR, PA_MENU_PRINCIPAL, PA_HISTORIA, PA_DUELO_LIBRE, PA_OPCIONES };
 	static constexpr float OPCIONES_CORTO = 0.8f;   // s (los Ajustes de la plantilla piden 2 s)
 	struct Pausa { bool abierta{ false }; int opcion{ 0 }; float abajo{ 0.0f }; } pausa;
 
 	std::vector<int> opcionesPausa() const
 	{
-		if (ctl.vista.pantalla == VD::DUELO) return { PA_CONTINUAR, PA_AJUSTES, PA_CONSTRUIR, PA_ABANDONAR, PA_MENU_PRINCIPAL };
-		std::vector<int> r{ PA_CONTINUAR };
+		if (ctl.vista.pantalla == VD::DUELO) return { PA_CONTINUAR, PA_OPCIONES, PA_CONSTRUIR, PA_ABANDONAR, PA_MENU_PRINCIPAL };
+		std::vector<int> r{ PA_CONTINUAR, PA_OPCIONES };
 		if (ctl.vista.pantalla == VD::ELEGIR_RIVAL && !historia.lista.empty()) r.push_back(ctl.vista.modo == VD::HISTORIA ? PA_DUELO_LIBRE : PA_HISTORIA);
-		if (ctl.vista.pantalla == VD::RESULTADO) r.push_back(PA_MENU_PRINCIPAL);
-		r.push_back(PA_AJUSTES);
 		r.push_back(PA_CONSTRUIR);
+		r.push_back(PA_MENU_PRINCIPAL);
 		return r;
 	}
 	static const char* textoPausa(int a)
@@ -137,6 +148,7 @@
 		case PA_MENU_PRINCIPAL: return "Salir al menú principal";
 		case PA_HISTORIA: return "Modo historia";
 		case PA_DUELO_LIBRE: return "Duelo libre";
+		case PA_OPCIONES: return "Opciones";   // (rama classic-portada: las Opciones del menu, y vuelve a la pausa)
 		default: return "";
 		}
 	}
@@ -144,7 +156,7 @@
 	void mostrarPausa()
 	{
 		VD& v = ctl.vista;
-		v.pausa = pausa.abierta;
+		v.pausa = pausa.abierta && !menuP.enOpciones;   // (con las Opciones abiertas desde la pausa, se ven ellas)
 		v.pausaOpcion = pausa.opcion;
 		v.pausaOpciones.clear();
 		for (int a : opcionesPausa()) v.pausaOpciones.push_back(textoPausa(a));
@@ -176,7 +188,7 @@
 			}
 			return true;
 		}
-		if (constructorMazo.abierto || ctl.vista.pantalla == VD::NINGUNA) return false;
+		if (constructorMazo.abierto || ctl.vista.pantalla == VD::NINGUNA || ctl.vista.pantalla == VD::MENU || ctl.vista.pantalla == VD::PORTADA) return false;
 		if (!pausa.abierta) {
 			if (!corto) return false;
 			pausa.abierta = true;
@@ -184,6 +196,10 @@
 			mostrarPausa();
 			sonido.sfx("sfx_menu_confirmar");
 			fprintf(stderr, "[pausa] abierta (pantalla %d, turno %d, fase %d)\n", ctl.vista.pantalla, dueloIA.turno, (int)dueloIA.fase);
+			return true;
+		}
+		if (menuP.enOpciones) {   // rama classic-portada: Opciones abiertas desde la pausa (menu_principal.h)
+			avanzarOpciones(p, corto);
 			return true;
 		}
 		const std::vector<int> ops = opcionesPausa();
@@ -201,17 +217,19 @@
 			const int a = ops[(size_t)pausa.opcion];
 			fprintf(stderr, "[pausa] elige '%s'\n", textoPausa(a));
 			sonido.sfx("sfx_menu_confirmar");
+			if (a == PA_OPCIONES) {   // (la pausa sigue abierta debajo: el duelo queda detenido)
+				menuP.enOpciones = true;
+				menuP.opcionOpc = 0;
+				mostrarMenu();
+				mostrarPausa();
+				return true;
+			}
 			cerrarPausa("eleccion");
 			switch (a) {
 			case PA_AJUSTES: ui.visible = true; break;
 			case PA_CONSTRUIR: pedidoConstructor = true; break;
-			case PA_ABANDONAR:
-				ctl.vista.derrotas++;
-				guardarProgreso();
-				registrarVariedad(1);
-				irAElegirRival();
-				break;
-			case PA_MENU_PRINCIPAL: irAElegirRival(); break;
+			case PA_ABANDONAR: rendirse(); break;   // rama classic-resultado: derrota con su pantalla (resultado_juego.h)
+			case PA_MENU_PRINCIPAL: irAMenuPrincipal(); break;   // rama classic-menus: el menu principal de verdad
 			case PA_HISTORIA:
 			case PA_DUELO_LIBRE:
 				ctl.vista.modo = a == PA_HISTORIA ? VD::HISTORIA : VD::LIBRE;
@@ -243,12 +261,9 @@
 	}
 	void guardarProgreso()
 	{
-		if (FILE* f = fopen(rutaProgreso.c_str(), "w")) {
-			fprintf(f, "nivel_max %d\nvictorias %d\nderrotas %d\n", ctl.vista.nivelMax, ctl.vista.victorias, ctl.vista.derrotas);
-			fclose(f);
-		} else {
-			fprintf(stderr, "[duelo] no se pudo guardar %s\n", rutaProgreso.c_str());
-		}
+		std::string s;   // (rama classic-pulido: guardado atomico, guardado.h)
+		guardado::agregar(s, "nivel_max %d\nvictorias %d\nderrotas %d\n", ctl.vista.nivelMax, ctl.vista.victorias, ctl.vista.derrotas);
+		guardado::guardarAtomico(rutaProgreso, s);
 	}
 
 	// ---- pantallas
@@ -257,7 +272,11 @@
 		ctl.vista.pantalla = VD::ELEGIR_RIVAL;
 		ctl.vista.t = 0.0f;
 		ctl.vista.turnoRival = ctl.vista.pensando = false;
+		ctl.vista.sorteo = false;
+		ctl.robo.activo = false;
+		reparto = ocultas[0] = ocultas[1] = 0;
 		ctl.vista.nivel = ctl.vista.nivelMax;
+		rivalIdx = -1;
 		ctl.bloqueado = true;
 		musica("musica_menu");
 		ctl.preparar({}, {}, {});   // mesa vacia
@@ -274,7 +293,22 @@
 			return;
 		}
 		ctl.vista.personaje = ctl.vista.entorno = ctl.vista.varianteEs = ctl.vista.varianteEn = "";
-		mazoRivalIA = baseIAlista ? baseIA.mazoRival(ctl.vista.nivel, semillaRival) : ia::MazoRival{};
+		// rama classic-menus: el rival del nivel lo elige el jugador (izq/der); rivalIdx -1 = uno al azar
+		const std::vector<const ia::Rival*> delNivel = baseIAlista ? baseIA.deNivel(ctl.vista.nivel) : std::vector<const ia::Rival*>{};
+		ctl.vista.rivalesNivel = (int)delNivel.size();
+		if (delNivel.empty()) {
+			mazoRivalIA = ia::MazoRival{};
+		} else {
+			if (rivalIdx < 0) {
+				mazoRivalIA = baseIA.mazoRival(ctl.vista.nivel, semillaRival);
+				rivalIdx = 0;
+				for (size_t k = 0; k < delNivel.size(); k++)
+					if (delNivel[k] == mazoRivalIA.rival) rivalIdx = (int)k;
+			}
+			rivalIdx = ((rivalIdx % (int)delNivel.size()) + (int)delNivel.size()) % (int)delNivel.size();
+			mazoRivalIA = baseIA.mazoDe(*delNivel[(size_t)rivalIdx], semillaRival);
+		}
+		ctl.vista.rivalIdx = rivalIdx;
 		// rama classic-variedad: el mismo rival, pero su plan y su mazo se arman para este duelo (prepararRival)
 		if (mazoRivalIA.rival) mazoRivalIA = ia::prepararRival(baseIA, *mazoRivalIA.rival, semillaRival, &memoriaIA);
 		VD& v = ctl.vista;
@@ -345,10 +379,60 @@
 		entornoVista = v.entorno;
 	}
 
+	// rama classic-historia: las reglas (tutorial.h) y la escena del modo historia (historia_dialogos.h: dialogo antes
+	// del duelo y final) se quedan con el mando mientras estan abiertas. Devuelve true si se quedo con el mando
+	bool finalPendiente{ false };   // se completo la historia: al salir del resultado, el final
+	bool avanzarHistoriaDialogos(uint32_t p)
+	{
+		VD& v = ctl.vista;
+		tutorial::Estado& tut = tutorial::estado();
+		if (tut.abierto) {
+			const int r = tut.avanzar(p);
+			if (r == 1) sonido.sfx("sfx_menu_cursor", 0.7f);
+			if (r == 2) sonido.sfx("sfx_menu_cancelar");
+			return true;
+		}
+		historia_dialogos::Escena& e = historia_dialogos::escena();
+		if (e.activa()) {
+			const int tipo = e.tipo;
+			if (p & (control::B_X | control::B_CIRCULO)) sonido.sfx("sfx_menu_cursor", 0.6f);
+			if (e.avanzar(p)) {
+				if (tipo == historia_dialogos::INTRO) {
+					empezarDueloIA();
+				} else {
+					irAElegirRival();
+				}
+			}
+			return true;
+		}
+		if (v.pantalla != VD::ELEGIR_RIVAL) return false;
+		if (p & control::B_R1) {   // las reglas del duelo
+			sonido.sfx("sfx_menu_confirmar");
+			tut.abrir();
+			return true;
+		}
+		if ((p & control::B_L1) && v.modo == VD::HISTORIA && historia_dialogos::desafioDisponible()) {   // Modo Desafio
+			historia_dialogos::desafioActivo() = !historia_dialogos::desafioActivo();
+			sonido.sfx("sfx_menu_confirmar");
+			fprintf(stderr, "[historia] modo desafio: %s\n", historia_dialogos::desafioActivo() ? "si" : "no");
+			return true;
+		}
+		return false;
+	}
+
 	// botones fuera de la mesa (elegir rival, resultado). Devuelve true si la pantalla se quedo con el mando
 	bool avanzarPantallaDuelo(uint32_t p)
 	{
 		VD& v = ctl.vista;
+		if (avanzarHistoriaDialogos(p)) return true;   // rama classic-historia
+		if (v.pantalla == VD::DUELO && v.sorteo) return avanzarSorteo(p);   // rama classic-duelo-arreglos
+		if (v.pantalla == VD::MENU) return avanzarMenuPrincipal(p);   // rama classic-menus (menu_principal.h)
+		if (v.pantalla == VD::PORTADA) return avanzarPortada(p);       // rama classic-portada (portada.h)
+		if ((v.pantalla == VD::ELEGIR_RIVAL || (v.pantalla == VD::RESULTADO && v.t > 0.8f)) && (p & control::B_CIRCULO)) {   // volver
+			sonido.sfx("sfx_menu_cancelar");
+			irAMenuPrincipal();
+			return true;
+		}
 		if (v.pantalla == VD::ELEGIR_RIVAL && (p & control::B_TRIANGULO) && !historia.lista.empty()) {   // historia <-> libre
 			v.modo = v.modo == VD::HISTORIA ? VD::LIBRE : VD::HISTORIA;
 			v.t = 0.0f;
@@ -366,7 +450,12 @@
 			if (p & control::B_CUADRADO) elegirRival(true);   // (otra variante de su mazo)
 			if (p & control::B_X) {
 				if (v.sagaAbierta) {
-					empezarDueloIA();
+					// rama classic-historia: primero la escena del rival (si tiene dialogo); al terminarla, el duelo
+					if (historia_dialogos::escena().abrir(v.personaje, v.rivalEs, v.rivalEn)) {
+						sonido.sfx("sfx_menu_confirmar");
+					} else {
+						empezarDueloIA();
+					}
 				} else {
 					ctl.aviso = "Vence a todos los de la saga anterior";
 					ctl.tAviso = 0.0f;
@@ -375,16 +464,23 @@
 			return true;
 		}
 		if (v.pantalla == VD::ELEGIR_RIVAL) {
-			const int antes = v.nivel;
-			if (p & (control::B_IZQ | control::B_ABAJO)) v.nivel = std::max(1, v.nivel - 1);
-			if (p & (control::B_DER | control::B_ARRIBA)) v.nivel = std::min(v.nivelMax, v.nivel + 1);
+			// rama classic-menus: arriba/abajo cambian el nivel (hasta el desbloqueado) e izq/der el rival del nivel
+			const int antes = v.nivel, rivalAntes = rivalIdx;
+			if (p & control::B_ABAJO) v.nivel = std::max(1, v.nivel - 1);
+			if (p & control::B_ARRIBA) v.nivel = std::min(v.nivelMax, v.nivel + 1);
 			if (v.nivel != antes) {
+				rivalIdx = -1;
 				elegirRival(false);
 				sonido.sfx("sfx_menu_cursor");
-			} else if (p & (control::B_IZQ | control::B_DER | control::B_ARRIBA | control::B_ABAJO)) {
-				sonido.sfx("sfx_error", 0.5f);   // (nivel bloqueado o el primero)
+			} else if (v.rivalesNivel > 1 && (p & (control::B_IZQ | control::B_DER))) {
+				rivalIdx += (p & control::B_DER) ? 1 : -1;
+				elegirRival(false);
+				if (rivalIdx != rivalAntes) sonido.sfx("sfx_menu_cursor");
+			} else if (p & control::B_DIRECCIONES) {
+				sonido.sfx("sfx_error", 0.5f);   // (nivel bloqueado o el primero, o un solo rival)
 			}
 			if (p & control::B_CUADRADO) {
+				rivalIdx = -1;
 				elegirRival(true);
 				sonido.sfx("sfx_menu_cursor");
 			}
@@ -394,16 +490,24 @@
 			}
 			return true;
 		}
-		if (v.pantalla == VD::RESULTADO) {
-			if ((p & control::B_X) && v.t > 0.8f) {
-				sonido.sfx("sfx_menu_confirmar");
-				irAElegirRival();
+		if (v.pantalla == VD::RESULTADO && finalPendiente && (p & control::B_X) && v.t > 0.8f) {
+			// rama classic-historia: completada la historia, el final (texto, creditos y el Modo Desafio)
+			const personajes::Personaje* jefe = historia.lista.empty() ? nullptr : &historia.lista.back();
+			if (finalPendiente && jefe && historia_dialogos::escena().abrirFinal(jefe->id, jefe->nombreEs, jefe->nombreEn)) {
+				finalPendiente = false;
+				historia.finalVisto = true;
+				historia.guardar();
+				historia_dialogos::desafioDisponible() = true;
+				musica("musica_menu");
+				return true;
 			}
-			return true;
 		}
+		if (v.pantalla == VD::RESULTADO) return avanzarResultado(p);   // rama classic-resultado: revancha / otro rival / menu
 		return false;
 	}
 
+	// rama classic-duelo-arreglos: antes del duelo, piedra, papel o tijera (el ganador decide quien empieza). La mesa
+	// queda vacia y el mando lo lleva avanzarSorteo; al decidir, arrancarDueloIA(empieza)
 	void empezarDueloIA()
 	{
 		if (!mazoRivalIA.rival || mazoRivalIA.principal.empty()) {
@@ -411,29 +515,142 @@
 			ctl.tAviso = 0.0f;
 			return;
 		}
+		VD& v = ctl.vista;
+		ctl.preparar({}, {}, {});
+		ctl.manoR = 0;
+		ctl.robo.activo = false;
+		interfazDuelo.contarMazos(0, 0, 0);
+		v.pantalla = VD::DUELO;
+		v.t = 0.0f;
+		v.ganador = -1;
+		v.subeNivel = false;
+		v.turnoRival = v.pensando = false;
+		v.sorteo = true;
+		v.sorteoEtapa = VD::SORTEO_ELEGIR;
+		v.sorteoOpcion = 0;
+		v.sorteoManoJ = v.sorteoManoR = v.sorteoGanador = v.sorteoEmpieza = -1;
+		v.sorteoT = 0.0f;
+		ctl.bloqueado = true;
+		guardarRevancha();   // rama classic-resultado
+		fprintf(stderr, "[sorteo] piedra, papel o tijera contra %s\n", mazoRivalIA.rival->nombreEs.c_str());
+	}
+
+	static const char* nombreMano(int m) { return m == 0 ? "Piedra" : m == 1 ? "Papel" : "Tijera"; }
+	uint32_t azarSorteo()
+	{
+		semillaRival = semillaRival * 1664525u + 1013904223u;
+		return (semillaRival >> 8) ^ (uint32_t)std::chrono::steady_clock::now().time_since_epoch().count();
+	}
+	// el rival que gana el sorteo decide con su personalidad (los agresivos casi siempre empiezan; los pacientes a veces
+	// prefieren ir segundos) y algo de azar: no siempre lo mismo
+	int decisionRival()
+	{
+		const ia::Personalidad p = mazoRivalIA.rival ? mazoRivalIA.rival->personalidad() : ia::PERSONALIDADES[0];
+		const float primero = std::max(0.2f, std::min(0.95f, 0.45f + 0.5f * p.agresividad - 0.3f * p.paciencia));
+		return (float)(azarSorteo() & 0xFFFFu) / 65536.0f < primero ? 1 : 0;
+	}
+	// el sorteo con el mando (devuelve true: se queda con el mando)
+	bool avanzarSorteo(uint32_t p)
+	{
+		VD& v = ctl.vista;
+		if (!v.sorteo) return false;
+		if (v.sorteoEtapa == VD::SORTEO_ELEGIR) {
+			if (p & (control::B_IZQ | control::B_ARRIBA)) v.sorteoOpcion = (v.sorteoOpcion + 2) % 3;
+			if (p & (control::B_DER | control::B_ABAJO)) v.sorteoOpcion = (v.sorteoOpcion + 1) % 3;
+			if (p & control::B_DIRECCIONES) sonido.sfx("sfx_menu_cursor", 0.7f);
+			if ((p & control::B_X) && v.sorteoT > 0.3f) {
+				sonido.sfx("sfx_menu_confirmar");
+				v.sorteoManoJ = v.sorteoOpcion;
+				v.sorteoManoR = (int)((azarSorteo() >> 3) % 3u);
+				const int d = (v.sorteoManoJ - v.sorteoManoR + 3) % 3;   // 1: gana el jugador, 2: gana el rival, 0: empate
+				v.sorteoGanador = d == 0 ? -1 : d == 1 ? 0 : 1;
+				v.sorteoEtapa = VD::SORTEO_MOSTRAR;
+				v.sorteoT = 0.0f;
+				fprintf(stderr, "[sorteo] jugador %s, rival %s: %s\n", nombreMano(v.sorteoManoJ), nombreMano(v.sorteoManoR),
+				        v.sorteoGanador < 0 ? "empate" : v.sorteoGanador == 0 ? "gana el jugador" : "gana el rival");
+			}
+			return true;
+		}
+		if (v.sorteoEtapa == VD::SORTEO_MOSTRAR) {
+			if (v.sorteoT < 1.8f && !((p & control::B_X) && v.sorteoT > 0.6f)) return true;
+			v.sorteoT = 0.0f;
+			if (v.sorteoGanador < 0) {   // empate: otra vez
+				v.sorteoEtapa = VD::SORTEO_ELEGIR;
+				v.sorteoManoJ = v.sorteoManoR = -1;
+			} else if (v.sorteoGanador == 0) {
+				v.sorteoEtapa = VD::SORTEO_ORDEN;
+				v.sorteoOpcion = 0;
+			} else {
+				v.sorteoEmpieza = decisionRival();
+				v.sorteoEtapa = VD::SORTEO_RIVAL_DECIDE;
+				fprintf(stderr, "[sorteo] el rival decide ir %s\n", v.sorteoEmpieza == 1 ? "primero" : "segundo");
+			}
+			return true;
+		}
+		if (v.sorteoEtapa == VD::SORTEO_ORDEN) {
+			if (p & control::B_DIRECCIONES) {
+				v.sorteoOpcion = 1 - v.sorteoOpcion;
+				sonido.sfx("sfx_menu_cursor", 0.7f);
+			}
+			if ((p & control::B_X) && v.sorteoT > 0.3f) {
+				sonido.sfx("sfx_menu_confirmar");
+				v.sorteoEmpieza = v.sorteoOpcion == 0 ? 0 : 1;
+				fprintf(stderr, "[sorteo] el jugador decide ir %s\n", v.sorteoEmpieza == 0 ? "primero" : "segundo");
+				v.sorteo = false;
+				arrancarDueloIA(v.sorteoEmpieza);
+			}
+			return true;
+		}
+		// el rival decidio: se lee y sigue (X o a los 2.4 s)
+		if (v.sorteoT > 2.4f || ((p & control::B_X) && v.sorteoT > 0.6f)) {
+			v.sorteo = false;
+			arrancarDueloIA(v.sorteoEmpieza);
+		}
+		return true;
+	}
+
+	void arrancarDueloIA(int empieza)
+	{
 		repartir();   // (mazo_duelo.h: el mazo armado si es valido; si no, el inicial)
 		const uint32_t semilla = semillaRival ^ (uint32_t)std::chrono::steady_clock::now().time_since_epoch().count();
 		dueloIA = ia::Duelo(&baseIA);
-		dueloIA.empezar(mazoDuelo.principal, mazoDuelo.fusion, mazoRivalIA.principal, mazoRivalIA.fusion, semilla);
+		dueloIA.empezar(mazoDuelo.principal, mazoDuelo.fusion, mazoRivalIA.principal, mazoRivalIA.fusion, semilla, empieza);
 		const ia::Rival& r = *mazoRivalIA.rival;
-		turnoIA = ia::Turno(&dueloIA, 1, r.personalidad(), r.nivel, semilla);
+		// rama classic-historia: Modo Desafio (personajes, tras el final): el rival juega al nivel maximo
+		const bool desafio = historia_dialogos::desafioActivo() && historia_dialogos::desafioDisponible() && ctl.vista.modo == VD::HISTORIA && !ctl.vista.personaje.empty();
+		turnoIA = ia::Turno(&dueloIA, 1, r.personalidad(), desafio ? ia::NIVEL_MAX : r.nivel, semilla);
 		// rama classic-variedad: el plan de este duelo, lo que recuerda del jugador y la dificultad adaptable
 		turnoIA.cerebro.usarPlan(mazoRivalIA.plan, memoriaIA.jugador, memoriaIA.dificultad(), memoriaIA.factorRuido());
+		// rama classic-ia-humana (ia_humana.h): imagina jugadas y piensa como una persona (Opciones: IA Clasica / Humana)
+		turnoIA.usarHumana(memoriaIA.humana, r.clave, semilla);
 		variedadPendiente = true;
 		fprintf(stderr, "[variedad] plan %s, dificultad %+.0f (ruido x%.2f), %d cartas\n", mazoRivalIA.plan >= 0 ? ia::PLANES[mazoRivalIA.plan].clave : "(sin plan)",
 		        memoriaIA.dificultad(), memoriaIA.factorRuido(), (int)mazoRivalIA.principal.size());
 		sucesosVistos = 0;
 		mesaPendiente = true;
 		esperaEfecto = 0.0f;
+		reiniciarResumen();   // rama classic-resultado (y la velocidad de animaciones)
 		estadoCampo = CAMPO_VACIO;   // (rama classic-efectos: sin el bosque del duelo anterior)
 		entornosRival.soltarCampo();   // (rama classic-campos: ni el fondo de la carta de campo anterior)
 		interfazDuelo.cambiarLP(false, ia::LP_INICIAL);
 		interfazDuelo.cambiarLP(true, ia::LP_INICIAL);
+		if (desafio) {   // (y el jugador empieza con menos LP)
+			dueloIA.l[0].lp = historia_dialogos::LP_DESAFIO;
+			interfazDuelo.cambiarLP(false, historia_dialogos::LP_DESAFIO);
+			fprintf(stderr, "[historia] duelo de desafio: %d LP, rival al nivel %d\n", historia_dialogos::LP_DESAFIO, ia::NIVEL_MAX);
+		}
 		ctl.preparar({}, {}, {});
 		ctl.vista.pantalla = VD::DUELO;
 		ctl.vista.t = 0.0f;
 		ctl.vista.ganador = -1;
 		ctl.vista.subeNivel = false;
+		// rama classic-duelo-arreglos: las manos empiezan vacias y se reparten carta por carta desde el mazo (5 y 5,
+		// alternadas); el robo del primer turno sale despues, con su suceso
+		ocultas[0] = (int)dueloIA.l[0].mano.size();
+		ocultas[1] = (int)dueloIA.l[1].mano.size();
+		reparto = std::min(ocultas[0], ia::MANO_INICIAL) + std::min(ocultas[1], ia::MANO_INICIAL);
+		repartoLado = dueloIA.activo;
+		ctl.robo.activo = false;
 		sincronizarMesaDuelo();
 		sonido.sfx("sfx_duelo_inicio");
 		musicaActual.clear();
@@ -491,6 +708,10 @@
 		ctl.sincronizarLado(false, j);
 		ctl.sincronizarLado(true, r);
 		ctl.manoJ = j.mano;
+		ocultas[0] = std::max(0, std::min(ocultas[0], (int)j.mano.size()));
+		ocultas[1] = std::max(0, std::min(ocultas[1], (int)r.mano.size()));
+		ctl.manoJ.resize(j.mano.size() - (size_t)ocultas[0]);
+		ctl.manoR = (int)r.mano.size() - ocultas[1];
 		const int fj = control::zonaPorId("jugador_fusion"), fr = control::zonaPorId("rival_fusion");
 		if (fj >= 0) {
 			ctl.zonas[fj] = control::Celda{};
@@ -520,8 +741,9 @@
 				c.tVolteo = 0.0f;
 			}
 		}
-		ctl.fase = faseInterfaz(dueloIA.fase);
-		interfazDuelo.contarMazos((int)j.mazo.size(), (int)r.mazo.size(), (int)j.extra.size());
+		ctl.fase = faseVisible(faseInterfaz(dueloIA.fase));   // (rama classic-resultado: la Fase de Espera se ve)
+		// (las ocultas siguen en el mazo de la mesa hasta que salen volando)
+		interfazDuelo.contarMazos((int)j.mazo.size() + ocultas[0], (int)r.mazo.size() + ocultas[1], (int)j.extra.size());
 		mesaPendiente = false;
 	}
 
@@ -529,7 +751,25 @@
 	void presentarSucesos()
 	{
 		const auto& su = dueloIA.sucesos;
-		while (sucesosVistos < su.size() && !hayAtaque() && !ctl.vuelo.activo && esperaEfecto <= 0.0f) {
+		// rama classic-duelo-arreglos: el reparto inicial, carta por carta (alternando), antes que nada
+		if (reparto > 0) {
+			if (ctl.robo.activo) return;
+			for (int intento = 0; intento < 2; intento++) {
+				const int lado = repartoLado;
+				repartoLado = 1 - repartoLado;
+				const int n = (int)dueloIA.l[(size_t)lado].mano.size();
+				if (ocultas[lado] <= 0 || n - ocultas[lado] >= ia::MANO_INICIAL) continue;
+				ocultas[lado]--;
+				reparto--;
+				sincronizarMesaDuelo();
+				const int k = n - ocultas[lado] - 1;
+				ctl.robarAnimado(lado == 1, lado == 0 ? dueloIA.l[0].mano[(size_t)k] : std::string(), k);
+				if (lado == 1) sonido.sfx("sfx_robar", 0.7f, 0.3f);   // (la del jugador suena por audio.h: su mano crece)
+				return;
+			}
+			reparto = 0;   // (no quedaba nada por repartir)
+		}
+		while (sucesosVistos < su.size() && !hayAtaque() && !ctl.vuelo.activo && !ctl.robo.activo && esperaEfecto <= 0.0f) {
 			const ia::Suceso s = su[sucesosVistos];
 			// rama classic-efectos: S_ATAQUE es la declaracion (luego la ventana de respuesta); el combate es S_COMBATE
 			if (s.tipo == ia::S_COMBATE || (s.tipo == ia::S_ATAQUE && !dueloIA.efectos)) {
@@ -560,10 +800,25 @@
 				break;
 			}
 			switch (s.tipo) {
+			case ia::S_ROBO: {   // rama classic-duelo-arreglos: la carta sale del mazo y va a la mano
+				const int lado = s.lado == 1 ? 1 : 0;
+				if (ocultas[lado] > 0) ocultas[lado]--;
+				sincronizarMesaDuelo();
+				int k = lado == 0 ? -1 : ctl.manoR - 1;
+				for (int i = (int)ctl.manoJ.size() - 1; lado == 0 && i >= 0 && k < 0; i--)   // (donde quedo; si ya no esta, no se anima)
+					if (ctl.manoJ[(size_t)i] == s.carta) k = i;
+				if (k >= 0) {
+					ctl.robarAnimado(lado == 1, lado == 0 ? s.carta : std::string(), k);
+					if (lado == 1) sonido.sfx("sfx_robar", 0.7f, 0.3f);   // (la del jugador suena por audio.h: su mano crece)
+				}
+				sucesosVistos++;
+				return;   // (el siguiente suceso, cuando llegue la carta)
+			}
 			case ia::S_INVOCA:
 			case ia::S_VOLTEA: {
 				const int z = zonaMesaIA(s.lado, s.zona);
 				if (z >= 0) tInvocada[z] = 0.0f;   // destello de aparicion
+				if (s.tipo == ia::S_INVOCA) esperaEfecto = std::max(esperaEfecto, empezarEntradaClave(s.carta, s.lado, z));   // rama classic-cartas-clave (entrada_clave_juego.h)
 				// el rival llega por sincronizarLado (sin evento): su sonido aca; el del jugador sale de EV_INVOCAR
 				if (s.lado == 1 && z >= 0) sonido.sfx(s.tipo == ia::S_INVOCA ? "sfx_invocar" : "sfx_voltear", 1.0f, control::ZONAS_MESA[z].x / 12.0f);
 				break;
@@ -616,8 +871,8 @@
 				break;
 			case ia::S_RESUELVE:   // rama classic-efectos: lo que hizo el eslabon se ve antes del siguiente
 				sincronizarMesaDuelo();
-				interfazDuelo.cambiarLP(false, dueloIA.l[0].lp);
-				interfazDuelo.cambiarLP(true, dueloIA.l[1].lp);
+				interfazDuelo.cambiarLP(false, lpTras(0, sucesosVistos));   // (rama classic-probador: los de ese momento)
+				interfazDuelo.cambiarLP(true, lpTras(1, sucesosVistos));
 				esperaEfecto = 0.35f;
 				break;
 			case ia::S_NEGADO:
@@ -628,7 +883,7 @@
 				esperaEfecto = 0.6f;
 				break;
 			case ia::S_LP:
-				interfazDuelo.cambiarLP(s.lado == 1, dueloIA.l[(size_t)s.lado].lp);
+				interfazDuelo.cambiarLP(s.lado == 1, lpTras(s.lado, sucesosVistos));
 				break;
 			case ia::S_CONTROL:
 				ctl.aviso = std::string(ia::textoEfecto("ef.control", idioma::ingles())) + " " + interfazDuelo.nombreCarta(s.carta);
@@ -637,8 +892,7 @@
 				esperaEfecto = 0.5f;
 				break;
 			case ia::S_FASE:
-				ctl.fase = faseInterfaz((ia::Fase)s.valor);
-				ctl.tFase = 0.0f;
+				mostrarFase(s.valor);   // (rama classic-resultado: con la Fase de Espera antes de la principal 1)
 				fprintf(stderr, "[fase] turno %d (%s): %s\n", dueloIA.turno, s.lado == 0 ? "jugador" : "rival", NOMBRE_FASE_IA[std::max(0, std::min(s.valor, 4))]);
 				break;
 			case ia::S_TURNO:
@@ -653,14 +907,35 @@
 				esperaEfecto = 0.8f;
 				break;
 			case ia::S_DANNO:   // (fuera de un ataque: danno de efectos y pagos de LP)
-				interfazDuelo.cambiarLP(s.lado == 1, dueloIA.l[(size_t)s.lado].lp);
+				interfazDuelo.cambiarLP(s.lado == 1, lpTras(s.lado, sucesosVistos));
 				break;
 			default: break;
 			}
 			sucesosVistos++;
 			mesaPendiente = true;
 		}
-		if (mesaPendiente && !hayAtaque() && !ctl.vuelo.activo) sincronizarMesaDuelo();
+		if (mesaPendiente && !hayAtaque() && !ctl.vuelo.activo && !ctl.robo.activo) sincronizarMesaDuelo();
+		// rama classic-probador: con todo presentado, los LP mostrados son los del duelo (los que cambio un efecto sin
+		// suceso, o un combate con dos dannos, como Reflect Bounder, que el ataque animado no cuenta)
+		if (sucesosVistos >= su.size() && !hayAtaque())
+			for (int lado = 0; lado < 2; lado++)
+				if (interfazDuelo.lp(lado == 1) != std::max(0, dueloIA.l[(size_t)lado].lp)) interfazDuelo.cambiarLP(lado == 1, dueloIA.l[(size_t)lado].lp);
+	}
+
+	// rama classic-probador: los LP de un lado justo despues del suceso k, cuando los que siguen todavia no se
+	// presentaron: los del duelo menos lo que cambiaron despues (S_DANNO, S_LP). Antes S_RESUELVE ponia los LP finales
+	// y, si en la misma jugada seguia un combate (responder a un ataque con una trampa que no lo para), el ataque
+	// animado restaba su danno otra vez: el jugador veia LP de menos (8000 - 2 x 1200 tras un ataque directo de 1200)
+	int lpTras(int lado, size_t k) const
+	{
+		int lp = dueloIA.l[(size_t)lado].lp;
+		const auto& su = dueloIA.sucesos;
+		for (size_t j = k + 1; j < su.size(); j++) {
+			if (su[j].lado != lado) continue;
+			if (su[j].tipo == ia::S_DANNO) lp += su[j].valor;
+			else if (su[j].tipo == ia::S_LP) lp -= su[j].valor;
+		}
+		return std::max(0, lp);
 	}
 
 	void animarAtaqueDuelo(int a, int o, int danno, bool alRival, bool mA, bool mO)
@@ -681,20 +956,28 @@
 	void avanzarDueloIA(float dt)
 	{
 		VD& v = ctl.vista;
+		dt = velocidadCuadro(dt);   // rama classic-resultado: velocidad de animaciones y R2 (velocidad_juego.h)
+#if defined(PS5_HOST_REFERENCE)
+		pruebaResultado(dt);
+#endif
 		v.t += dt;
-		if (v.pantalla != VD::DUELO) {
+		if (v.pantalla != VD::DUELO || v.sorteo) {   // (rama classic-duelo-arreglos: en el sorteo no hay duelo todavia)
+			if (v.sorteo) v.sorteoT += dt;
 			ctl.bloqueado = true;
 			return;
 		}
 		esperaEfecto = std::max(0.0f, esperaEfecto - dt);
+		avanzarEntradaClave(dt);   // rama classic-cartas-clave: la entrada de una carta clave (entrada_clave_juego.h)
 		presentarSucesos();
-		const bool alDia = sucesosVistos >= dueloIA.sucesos.size() && !hayAtaque() && !ctl.vuelo.activo && !mesaPendiente && esperaEfecto <= 0.0f;
+		const bool alDia = sucesosVistos >= dueloIA.sucesos.size() && !hayAtaque() && !ctl.vuelo.activo && !ctl.robo.activo && reparto <= 0 && !mesaPendiente &&
+		                   esperaEfecto <= 0.0f;
 		// rama classic-efectos: decide el que tiene la pregunta del duelo (responder o elegir) o el del turno
 		ctl.bloqueado = dueloIA.decide() != 0 || dueloIA.ganador >= 0 || !alDia;
 		// rama classic-arreglos: por que esta bloqueado el jugador (solo cuando cambia), al klog
 		{
 			char por[160];
-			snprintf(por, sizeof(por), "%s%s%s%s%s%s%s", dueloIA.decide() != 0 ? " decide-el-rival" : "", dueloIA.ganador >= 0 ? " fin" : "",
+			snprintf(por, sizeof(por), "%s%s%s%s%s%s%s%s", ctl.robo.activo || reparto > 0 ? " robando" : "", dueloIA.decide() != 0 ? " decide-el-rival" : "",
+			         dueloIA.ganador >= 0 ? " fin" : "",
 			         sucesosVistos < dueloIA.sucesos.size() ? " sucesos-sin-mostrar" : "", hayAtaque() ? " ataque-animado" : "", ctl.vuelo.activo ? " carta-volando" : "",
 			         mesaPendiente ? " mesa-pendiente" : "", esperaEfecto > 0.0f ? " animacion-efecto" : "");
 			if (por != bloqueoAntes) {
@@ -702,6 +985,7 @@
 				bloqueoAntes = por;
 			}
 		}
+		seguirResultado(alDia, dt);   // rama classic-resultado: resumen, carta clave y Fase de Espera
 		v.turnoRival = dueloIA.activo == 1 && dueloIA.ganador < 0;
 		v.pensando = dueloIA.decide() == 1 && dueloIA.ganador < 0 && turnoIA.pensando();
 		v.turno = dueloIA.turno;
@@ -712,6 +996,21 @@
 		if (!alDia) return;
 		if (dueloIA.ganador >= 0) {
 			terminarDueloIA();
+			return;
+		}
+		// rama classic-ciclos: Opciones > "Preguntar antes de activar". Siempre: el motor ofrece al jugador cada ventana;
+		// Nunca: el duelo no se detiene a preguntarle (pasa solo; las elecciones al resolver si se preguntan); Auto: pregunta
+		// solo si tiene algo que activar
+		dueloIA.preguntarSiempre[0] = opciones::preguntarActivacion() == opciones::PREGUNTAR_SIEMPRE;
+		if (opciones::preguntarActivacion() == opciones::PREGUNTAR_NUNCA && dueloIA.ef.preg.tipo == ia::P_RESPUESTA && dueloIA.ef.preg.lado == 0) {
+			ia::Jugada pasa;
+			pasa.tipo = ia::J_PASAR;
+			dueloIA.aplicar(pasa);
+			if (ctl.enPregunta) {
+				ctl.estado = control::NAVEGAR;
+				ctl.enPregunta = ctl.armando = ctl.eleccionDuelo = false;
+			}
+			fprintf(stderr, "[duelo] preguntar antes de activar: nunca (el jugador pasa solo)\n");
 			return;
 		}
 		musicaDePantalla();   // (pasa a la tensa con LP bajos)
@@ -764,6 +1063,7 @@
 				}
 				coleccion.desbloquear(historia.vencidos);
 				v.sagaNueva = historia.sagaActual() > antes;
+				if (historia.completa() && !historia.finalVisto) finalPendiente = true;   // rama classic-historia: el final
 				if (v.sagaNueva) {
 					v.saga = historia.sagaActual();
 					v.sagaEs = personajes::SAGAS[v.saga].es;
@@ -781,13 +1081,11 @@
 		}
 		guardarProgreso();
 		registrarVariedad(v.ganador);   // rama classic-variedad: plan, mazo, lectura del jugador y racha
-		sonido.pararMusica(0.8f);
-		musicaActual.clear();
-		sonido.sfx(v.ganador == 0 ? "sfx_victoria" : "sfx_derrota");
 		v.pantalla = VD::RESULTADO;
 		v.t = 0.0f;
 		v.turnoRival = v.pensando = false;
 		ctl.estado = control::NAVEGAR;
+		prepararResultado();   // rama classic-resultado: motivo, resumen, desbloqueos y musica (resultado_juego.h)
 		fprintf(stderr, "[duelo] fin: gana %s (LP %d / %d, turno %d)\n", v.ganador == 0 ? "el jugador" : v.ganador == 1 ? "el rival" : "nadie", dueloIA.l[0].lp,
 		        dueloIA.l[1].lp, dueloIA.turno);
 	}

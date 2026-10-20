@@ -54,7 +54,7 @@ Pegasus, Noah y Yami Yugi calculadores, Rafael y Kisara defensivos, Zigfried far
   `fuente_classic/firma/`, español oficial de `cards.cdb` es-ES por passcode: las 78 lo tienen, caras ES/EN/HD, arte de
   Gemini o provisional) y las marca en `cartas_classic.txt`: `id|passcode|límite|subtipo|firma|dueño,dueño`.
 - Límite 3, salvo los **Dioses Egipcios (límite 1)**. Sin motor de efectos se juegan como monstruos con su ATK/DEF
-  (piden 3 sacrificios; hoy el duelo pide 2 para nivel 7+). Obelisk 4000/4000 impreso. **Slifer: 3000/3000** (en el
+  (piden 3 sacrificios, y el duelo ya los pide: `ia.h`, nivel 7+ pide 2 salvo los Dioses). Obelisk 4000/4000 impreso. **Slifer: 3000/3000** (en el
   anime son 1000 por carta en la mano; 3 es lo normal). **Ra: 4000/4000** (como su versión impresa Immortal Phoenix
   y en la línea de lo que suma con 3 sacrificios). Las caras muestran ese valor.
 - **Sustituciones** (solo existen en el anime): Cinderella -> Prinzessin; Duos (ka de Seto) -> Dark Blade; Mago de
@@ -65,10 +65,10 @@ Pegasus, Noah y Yami Yugi calculadores, Rafael y Kisara defensivos, Zigfried far
   Orichalcos + Orichalcos Sword of Sealing y Levia-Dragon; Zorc Necrophades -> Dark Master - Zorc (con Contract
   with the Dark Master); Diabound -> Diabound Kernel; Portrait's Secret (Bakura) fuera. Se quitaron cartas genéricas
   que no son "firma" (Battle Warrior, Cyber Shield, Gernia, Marie the Fallen One...) para no inflar la lista.
-- **Propuesta para el constructor**: el jugador tiene una carta firma desde que vence a su dueño en el modo
-  historia (`personajes::Historia::cartaDesbloqueada(duennos)`, progreso en `historia.txt`). Hoy `mazo.h` aún se
-  las da todas (copias = límite); el cambio es leer el 5º/6º campo de `cartas_classic.txt` y poner 0 copias si no
-  está desbloqueada.
+- **Cartas firma bloqueadas**: el jugador tiene una carta firma desde que vence a su dueño en el modo historia
+  (`personajes::Historia::cartaDesbloqueada(duennos)`, progreso en `historia.txt`). `mazo.h` lee el 5º/6º campo de
+  `cartas_classic.txt` y deja en 0 copias las que no están desbloqueadas (`Coleccion::desbloquear`, que se llama al
+  arrancar y al vencer a un personaje); en el constructor salen como "Vence a X".
 
 ## Entornos
 El campo `entorno` usa las claves del `docs/entornos.md` de la rama **classic-entornos** (17 claves), que es la

@@ -31,6 +31,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "guardado.h"   // rama classic-pulido: guardado atomico y avisos
+
 namespace idioma {
 
 enum { ES = 0, EN = 1 };
@@ -109,6 +111,7 @@ inline const std::unordered_map<std::string, std::string>& tabla()
 		{ "Ajustes", "Settings" }, { "Idioma", "Language" },
 		{ "Animar monstruos", "Animate monsters" }, { "Camara que respira", "Breathing camera" },
 		{ "Dificultad adaptable", "Adaptive difficulty" },   // (rama classic-variedad)
+		{ "IA", "AI" }, { "Humana", "Human" }, { "Clásica", "Classic" },   // (rama classic-ia-humana)
 		{ "Demo automatica", "Auto demo" }, { "Ataques automaticos", "Auto attacks" }, { "Camara", "Camera" },
 		{ "Cine", "Cinema" }, { "Tablero", "Board" }, { "Cenital", "Top-down" }, { "Lateral", "Side" }, { "Libre", "Free" },
 		{ "Brillo holografico", "Holo shine" }, { "Ataque por casillas", "Attack by zones" },
@@ -166,8 +169,90 @@ inline const std::unordered_map<std::string, std::string>& tabla()
 		{ "Elige el monstruo a sacrificar (coste)", "Choose the monster to Tribute (cost)" },
 		{ "Ataque", "Attack" }, { "Defensa", "Defense" }, { "No", "No" }, { "Ataque negado", "Attack negated" }, { "Negado", "Negated" },
 		{ "Volumen musica", "Music volume" }, { "Volumen efectos", "Effects volume" },
+		// elecciones (rama classic-elecciones: control.h, motivos del menu y del boton de fase)
+		{ "The Last Warrior from Another Planet: nadie puede invocar", "The Last Warrior from Another Planet: no one can Summon" },
+		{ "No puedes invocar este turno", "You cannot Summon this turn" },
+		{ "Primero ataca (Amazoness Archers)", "Attack first (Amazoness Archers)" },
+		{ "Amazoness Archers: tus monstruos deben atacar este turno", "Amazoness Archers: your monsters must attack this turn" },
+		// motor2 (rama classic-motor2: control.h, ventanas y fusiones de contacto)
+		{ "Fase de espera del rival", "Opponent's Standby Phase" }, { "Tu fase de espera", "Your Standby Phase" },
+		{ "El rival termina la fase de batalla", "Your opponent ends the Battle Phase" }, { "El rival colocó un monstruo", "Your opponent Set a monster" },
+		// menu principal y Opciones (rama classic-menus: menu_principal.h, menu_ui.h, duelo_ui.h)
+		{ "MENÚ PRINCIPAL", "MAIN MENU" }, { "OPCIONES", "OPTIONS" }, { "Historia", "Story" }, { "Opciones", "Options" },
+		{ "Salir del juego", "Quit game" }, { "Volumen de la música", "Music volume" }, { "Volumen de los efectos", "Effects volume" },
+		{ "¿Salir del juego? Pulsa X otra vez para confirmar", "Quit the game? Press X again to confirm" },
+		{ "Opción / valor", "Option / value" }, { "Nivel / rival", "Level / opponent" }, { "Menú principal", "Main menu" },
 		{ "Figuras 3D: %d (ultima: %s)", "3D figures: %d (latest: %s)" },
+		// rama classic-duelo-arreglos: boton de fase del HUD y piedra, papel o tijera (duelo_juego.h, duelo_ui.h, interfaz.h)
+		{ "SIGUIENTE FASE", "NEXT PHASE" }, { "TERMINAR TURNO", "END TURN" }, { "Le toca al rival", "Your opponent's turn next" },
+		{ "PIEDRA, PAPEL O TIJERA", "ROCK, PAPER, SCISSORS" }, { "Elige tu mano: el ganador decide quién empieza", "Choose your hand: the winner decides who goes first" },
+		{ "Piedra", "Rock" }, { "Papel", "Paper" }, { "Tijera", "Scissors" }, { "Tú", "You" },
+		{ "¡Empate! Otra vez", "Tie! Again" }, { "¡Ganas el sorteo!", "You win the toss!" }, { "Gana el rival", "Your opponent wins" },
+		{ "Ir primero", "Go first" }, { "Ir segundo", "Go second" }, { "decide ir primero", "decides to go first" },
+		{ "decide ir segundo", "decides to go second" },
 		{ "Figura 3D nueva: todavía sin datos de carta (preparar_figuras.py).", "New 3D figure: no card data yet." },
+		// rama classic-portada: portada y menu principal con el arte (portada_ui.h, menu_ui.h, menu_principal.h)
+		{ "Pulsa X para comenzar", "Press X to start" }, { "MODO DUELO", "DUEL MODE" }, { "CONSTRUCCIÓN DE DECK", "DECK BUILDER" },
+		{ "LISTA DE CARTAS", "CARD LIST" }, { "SALIR", "QUIT" }, { "Permitir cartas prohibidas", "Allow forbidden cards" },
+		{ "Sí", "Yes" }, { "Preguntar antes de activar", "Ask before activating" }, { "Auto", "Auto" }, { "Siempre", "Always" },
+		{ "Nunca", "Never" }, { "Velocidad de animación", "Animation speed" }, { "Normal", "Normal" }, { "Rápida", "Fast" },
+		{ "Muy rápida", "Very fast" }, { "Figuras 3D", "3D figures" },
+		// constructor2 (rama classic-constructor2: constructor.h, constructor_ui.h, mazo.h; bloque propio, contiguo)
+		{ "MIS MAZOS", "MY DECKS" }, { "PROHIBIDAS PERMITIDAS", "FORBIDDEN ALLOWED" }, { "Goat: ", "Goat: " }, { " (Opciones: sin límite)", " (Options: no limit)" }, { "LISTA DE CARTAS · FORMATO GOAT", "CARD LIST · GOAT FORMAT" }, { "Triángulo: buscar y filtrar · Círculo: volver", "Triangle: search & filter · Circle: back" }, { "+ Nuevo mazo", "+ New deck" }, { "VÁLIDO", "VALID" }, { "NO VÁLIDO", "NOT VALID" }, { "NO VÁLIDO: ", "NOT VALID: " },
+		{ "PRINCIPAL", "MAIN" }, { "EXTRA", "EXTRA" }, { "MAZO EXTRA", "EXTRA DECK" }, { "SIN GUARDAR", "UNSAVED" }, { "OPTIONS guarda", "OPTIONS saves" },
+		{ "Mazo de los duelos (en uso)", "Deck for duels (in use)" }, { "EN USO", "IN USE" }, { "Válido: Cuadrado lo usa en los duelos", "Valid: Square uses it in duels" },
+		{ "Crea un mazo vacío y ponle nombre con el teclado en pantalla. Se guarda cuando tenga entre 40 y 60 cartas.",
+		  "Create an empty deck and name it with the on-screen keyboard. It can be saved once it has 40 to 60 cards." },
+		{ "Elige una carta para ver su detalle", "Pick a card to see its details" },
+		{ "X: acciones del mazo · Cuadrado: usar en los duelos", "X: deck actions · Square: use in duels" },
+		{ "X agrega, Cuadrado quita, OPTIONS guarda", "X adds, Square removes, OPTIONS saves" },
+		{ "Editar", "Edit" }, { "Usar en los duelos", "Use in duels" }, { "Renombrar", "Rename" }, { "Copiar", "Copy" }, { "Borrar", "Delete" },
+		{ "¿Borrar el mazo?", "Delete the deck?" }, { "Hay cambios sin guardar", "There are unsaved changes" },
+		{ "Guardar y salir", "Save and exit" }, { "Salir sin guardar", "Exit without saving" }, { "Seguir editando", "Keep editing" },
+		{ "Guardar", "Save" }, { "Agregar", "Add" }, { "Quitar", "Remove" }, { "Página", "Page" }, { "Clase", "Class" },
+		{ "Buscar y filtrar", "Search & filter" }, { "Mazo / colección", "Deck / collection" }, { "Elegir y cambiar", "Pick and change" },
+		{ "Aceptar", "Accept" }, { "Esta fila a Todos", "Reset this row" }, { "Quitar filtros", "Clear filters" }, { "Escribir", "Type" },
+		{ "Espacio", "Space" }, { "Mayúsculas", "Caps" },
+		{ "Mazo guardado", "Deck saved" }, { "Mazo copiado", "Deck copied" }, { "Mazo renombrado", "Deck renamed" }, { "Mazo borrado: ", "Deck deleted: " },
+		{ "Mazo para los duelos: ", "Deck for duels: " }, { "Mazo nuevo", "New deck" }, { " (copia)", " (copy)" }, { "Cambios descartados", "Changes discarded" },
+		{ "No se puede guardar: ", "Cannot save: " }, { "No se puede usar: ", "Cannot use: " }, { "Ya hay 20 mazos: borra uno", "There are already 20 decks: delete one" },
+		{ "El mazo está vacío", "The deck is empty" }, { "El nombre no puede quedar vacío", "The name cannot be empty" }, { "al mazo extra", "to the Extra Deck" },
+		{ "Clase: ", "Class: " }, { "Orden: ", "Sort: " }, { " cartas encontradas", " cards found" },
+		{ "Sin filtros · Triángulo: buscar y filtrar", "No filters · Triangle: search & filter" },
+		{ " para desbloquear", " to unlock" }, { "carta firma bloqueada", "signature card locked" }, { "prohibida en el Formato Goat", "forbidden in the Goat Format" },
+		{ "limitada a 1 copia", "limited to 1 copy" }, { "semilimitada a 2 copias", "semi-limited to 2 copies" }, { "máximo 3 copias", "up to 3 copies" },
+		// filtros
+		{ "BUSCAR Y FILTRAR", "SEARCH & FILTER" }, { "Nombre", "Name" }, { "Subtipo", "Subtype" }, { "Atributo", "Attribute" }, { "Tipo", "Type" },
+		{ "Orden", "Sort" }, { "Listo", "Done" }, { "(cualquiera)", "(any)" }, { "Todas", "All" }, { "Todos", "All" },
+		{ "Normal", "Normal" }, { "Efecto", "Effect" }, { "Magia", "Spell" }, { "Trampa", "Trap" }, { "Campo", "Field" }, { "Equipo", "Equip" },
+		{ "Continua", "Continuous" }, { "Rápida", "Quick-Play" }, { "Contraataque", "Counter" }, { "Volteo", "Flip" }, { "Toon", "Toon" },
+		{ "Unión", "Union" }, { "Espíritu", "Spirit" }, { "ATK", "ATK" }, { "DEF", "DEF" },
+		{ "Clase y nombre", "Class and name" }, { "ATK (mayor)", "ATK (highest)" }, { "DEF (mayor)", "DEF (highest)" }, { "Nivel (mayor)", "Level (highest)" },
+		// tipos de carta en el detalle
+		{ "Magia normal", "Normal Spell" }, { "Magia de campo", "Field Spell" }, { "Magia de equipo", "Equip Spell" }, { "Magia continua", "Continuous Spell" },
+		{ "Magia rápida", "Quick-Play Spell" }, { "Magia de ritual", "Ritual Spell" }, { "Trampa normal", "Normal Trap" }, { "Trampa continua", "Continuous Trap" },
+		{ "Trampa de contraataque", "Counter Trap" }, { "Monstruo normal", "Normal Monster" }, { "Monstruo de efecto", "Effect Monster" },
+		{ "Monstruo de fusión", "Fusion Monster" }, { "Monstruo de ritual", "Ritual Monster" }, { "Monstruo de volteo", "Flip Monster" },
+		{ "Monstruo toon", "Toon Monster" }, { "Monstruo de unión", "Union Monster" }, { "Monstruo espíritu", "Spirit Monster" },
+		// teclado en pantalla
+		{ "Buscar por nombre", "Search by name" }, { "Nombre del mazo nuevo", "New deck name" }, { "Renombrar mazo", "Rename deck" },
+		{ "MAYÚS", "CAPS" }, { "ESPACIO", "SPACE" }, { "BORRAR", "DELETE" }, { "ACEPTAR", "OK" },
+		// rama classic-pulido: guardado (guardado.h, interfaz.h), dado y moneda (efectos_cartas.h), detalle con desplazamiento
+		{ "No se pudo guardar", "Could not save" },
+		{ "No se pudo crear /data/yugioh_classic: el progreso podría no guardarse", "Could not create /data/yugioh_classic: progress may not be saved" },
+		{ "Dado: ", "Die: " }, { "Moneda: cara", "Coin: heads" }, { "Moneda: cruz", "Coin: tails" },
+		{ "Desplazar", "Scroll" }, { "Figuras 3D", "3D figures" },
+		// cartas-clave (rama classic-cartas-clave: entrada especial de las cartas clave, entrada_clave_ui.h)
+		{ "CARTA CLAVE", "KEY CARD" }, { "DIOS EGIPCIO", "EGYPTIAN GOD" }, { "INVOCACIÓN POR FUSIÓN", "FUSION SUMMON" },
+		{ "INVOCACIÓN RITUAL", "RITUAL SUMMON" }, { "Saltar", "Skip" },
+		// galeria
+		{ "GALERÍA DE FIGURAS 3D", "3D FIGURE GALLERY" }, { " FIGURAS", " FIGURES" }, { " DESBLOQUEADAS", " UNLOCKED" },
+		{ "No hay figuras 3D cargadas", "No 3D figures loaded" }, { "Ataque: ", "Attack: " }, { "Animada (esqueleto)", "Animated (skeleton)" },
+		{ "Embestida", "Charge" }, { "Espada", "Sword" }, { "Hechizo", "Spellcast" }, { "Aliento", "Breath" }, { "Rayo", "Lightning" },
+		{ "Girar y acercar", "Rotate and zoom" }, { "Cerrar detalle", "Close details" }, { "Zoom", "Zoom" }, { "Vista inicial", "Reset view" },
+		{ "Ver figura", "View figure" }, { "Galería 3D", "3D gallery" }, { "Esta carta no tiene figura 3D", "This card has no 3D figure" },
+		// extras (rama classic-extras: Opciones > Personalizacion; lo demas va con idioma::t en cosmeticos*.h)
+		{ "Personalización", "Customization" },
 	};
 	return t;
 }
@@ -194,12 +279,7 @@ inline const char* tr(const char* es)
 inline void guardar()
 {
 	if (rutaPreferencia().empty()) return;
-	if (FILE* f = fopen(rutaPreferencia().c_str(), "w")) {
-		fputs(ingles() ? "en\n" : "es\n", f);
-		fclose(f);
-	} else {
-		fprintf(stderr, "[idioma] no se pudo guardar %s\n", rutaPreferencia().c_str());
-	}
+	guardado::guardarAtomico(rutaPreferencia(), ingles() ? "en\n" : "es\n");   // (rama classic-pulido: guardado.h)
 }
 
 // lee la preferencia (idioma.txt); sin archivo, espanol. YUGI_IDIOMA=en|es manda (PC)

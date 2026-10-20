@@ -36,6 +36,7 @@
 #include "fx.h"         // efectos del Niagara Examples Pack horneados a flipbook
 #include "efectos_cartas.h"   // activacion de magias/trampas, dado y moneda (Master Duel, rama classic-fx-md)
 #include "audio.h"      // musica y efectos de sonido (rama classic-audio)
+#include "velocidad.h"  // rama classic-resultado: velocidad de animaciones (opciones.txt velocidad_anim) y R2
 #include <fstream>
 #include <iterator>
 #include <ctime>
@@ -43,6 +44,7 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "guardado.h"   // rama classic-pulido: guardado atomico y avisos de guardado
 
 #if !defined(PS5_HOST_REFERENCE)
 // Carpeta de datos escribible del juego en la consola ("" si no se pudo crear: se usa la del juego, como antes)
@@ -52,7 +54,9 @@ static const std::string& carpetaDatosConsola()
 		mkdir("/data/yugioh_classic", 0777);
 		chmod("/data/yugioh_classic", 0777);
 		struct stat st{};
-		return (stat("/data/yugioh_classic", &st) == 0 && S_ISDIR(st.st_mode)) ? std::string("/data/yugioh_classic/") : std::string();
+		if (stat("/data/yugioh_classic", &st) == 0 && S_ISDIR(st.st_mode)) return std::string("/data/yugioh_classic/");
+		guardado::avisarSinCarpeta();   // (rama classic-pulido: guardado.h, se avisa en pantalla)
+		return std::string();
 	}();
 	return r;
 }
@@ -160,6 +164,20 @@ public:
 	int ataquesVistos{ 0 };
 	std::array<float, interfaz::NUM_ZONAS> tInvocada{};   // s desde que la carta de esa zona aparecio (destello)
 	struct pad mando{};      // la lectura anterior del control (para ver que se acaba de apretar)
+	uint32_t mandoAbajo{ 0 };   // rama classic-menus: los botones de verdad abajo en la lectura anterior (ver leerMando)
+
+	// rama classic-menus: lee el mando. "pressed" (lo recien apretado) se calcula contra los botones de la lectura
+	// anterior REAL: una pantalla que "consume" el mando borrando mando.held (el constructor lo hacia) convertia cada
+	// cuadro con la cruz mantenida en un toque nuevo (la cruz iba "como un rayo"). L2/R2 tambien por su bit digital.
+	void leerMando()
+	{
+		mando.held = mandoAbajo;
+		pad_player(0, &mando);
+		mandoAbajo = mando.held;
+		constexpr uint32_t PAD_L2_DIGITAL = 0x000100, PAD_R2_DIGITAL = 0x000200;
+		if (mando.held & PAD_L2_DIGITAL) mando.l2 = std::max(mando.l2, 1.0f);
+		if (mando.held & PAD_R2_DIGITAL) mando.r2 = std::max(mando.r2, 1.0f);
+	}
 	interfaz::Interfaz interfazDuelo;   // todo lo que rodea al tablero y las cartas de la mesa (interfaz.h)
 	audio::Motor sonido;                // rama classic-audio: musica y efectos (audio.h; assets/audio/audio.txt)
 	audio::Duelo sonidoDuelo;
@@ -519,13 +537,13 @@ public:
 	// destruidas van al cementerio) y, en la demo, lanza el siguiente
 	void avanzarAtaque()
 	{
-		pad_player(0, &mando);
+		leerMando();
 		for (float& t : tInvocada) {
 			t += frameTimer;
 		}
 		if (hayAtaque()) {
 			const float antes = tAtaque;
-			tAtaque += frameTimer * velocidadAtaque();   // rama classic-figuras: con figura 3D el ataque va mas lento
+			tAtaque += frameTimer * velocidadAtaque() * escalaAnim();   // rama classic-figuras: con figura 3D el ataque va mas lento (classic-resultado: y la velocidad elegida)
 			if (antes < T_IMPACTO && tAtaque >= T_IMPACTO) {
 				control::Celda& co = ctl.zonas[zonaObjetivo];
 				if (co.bocaAbajo) {
@@ -711,6 +729,10 @@ public:
 	// ------------------------------------------------------------------ camara y uniformes
 	void updateUniformBuffers()
 	{
+		if (galeriaVisible()) {   // rama classic-galeria: la camara y la luz del visor (galeria_juego.h)
+			uniformesGaleria();
+			return;
+		}
 		const float aspecto = (float)width / (float)height;
 		const float fovVertical = 2.0f * atanf(tanf(glm::radians(FOV_HORIZONTAL) * 0.5f) / aspecto);
 		uniformData.proyeccion = glm::perspectiveRH(fovVertical, aspecto, 0.1f, 80.0f);
@@ -750,6 +772,7 @@ public:
 			ojo += glm::vec3(sinf(tAtaque * 71.0f), cosf(tAtaque * 53.0f), 0.0f) * 0.15f * destello();
 		}
 		elegirCamara(ojo, mira, vistaTablero);   // selector de camara: CINE deja lo de arriba; los otros modos la reemplazan
+		camaraEntradaClave(ojo, mira);   // rama classic-cartas-clave: la camara de la entrada de una carta clave (entrada_clave_juego.h)
 		// rotulos ATK/DEF de la interfaz: solo con la camara frontal
 		camaraIntacta = ojo == vistaMostrada.ojo && mira == vistaMostrada.mira;
 		interfazDuelo.rotulosVisibles(camaraFrontalActiva());
@@ -1025,6 +1048,10 @@ public:
 
 	void buildCommandBuffer()
 	{
+		if (galeriaVisible()) {   // rama classic-galeria: el cuadro es solo la galeria (galeria_juego.h)
+			cuadroGaleria();
+			return;
+		}
 		VkCommandBuffer cmd = drawCmdBuffers[currentBuffer];
 		VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
 		VK_CHECK_RESULT(vkBeginCommandBuffer(cmd, &cmdBufInfo));
@@ -1037,6 +1064,9 @@ public:
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentBuffer], 0, nullptr);
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.escena);
 		dibujarTablero(cmd, true);
+		if (const campos::Campo* tp = tapeteMesa()) {   // rama classic-extras: el tapete elegido (debajo de la carta de campo)
+			camposMesa.superficie(cmd, descriptorSets[currentBuffer], *tp, 1.0f, true);
+		}
 		if (const campos::Campo* cc = campoMesa()) {   // rama classic-campos: el material de la carta de campo sobre el tapete
 			camposMesa.superficie(cmd, descriptorSets[currentBuffer], *cc, ambienteCampo());
 		}
@@ -1057,6 +1087,8 @@ public:
 		entornosRival.transparente(cmd, descriptorSets[currentBuffer]);   // llamas, halos y particulas del entorno
 		if (const campos::Campo* cc = campoMesa()) {
 			camposMesa.particulas(cmd, descriptorSets[currentBuffer], *cc, ambienteCampo());   // gotas, brasas, chispas... entre las casillas
+		} else if (const campos::Campo* tp = tapeteMesa()) {
+			camposMesa.particulas(cmd, descriptorSets[currentBuffer], *tp, 0.6f);   // rama classic-extras: las del tapete, mas suaves
 		}
 		interfazDuelo.dibujar(cmd, currentBuffer, uniformData.proyeccion * uniformData.vista, (float)width, (float)height);
 		drawUI(cmd);
@@ -1658,6 +1690,7 @@ public:
 		modoCamara = modo;
 		tCambioCamara = 0.0f;
 		dirCambioCamara = direccion;
+		if (direccion != 0 && cicloCamara <= 0.0f) recordarCamara(modo);   // rama classic-extras: L1/R1 (o C) se recuerda (opciones.txt)
 #if defined(PS5_HOST_REFERENCE)
 		if (getenv("YUGI_DEPURA_CAMARA")) {
 			fprintf(stderr, "[camara] modo %s (t %.2f)\n", interfaz::CLAVE_CAMARA[modo], tiempo);
@@ -1839,6 +1872,14 @@ public:
 
 #include "figuras.h"      // rama classic-figuras: figuras 3D de las cartas emblematicas
 #include "duelo_juego.h"  // rama classic-integracion: el duelo real contra la IA (ia.h), elegir rival y progreso
+#include "velocidad_juego.h"   // rama classic-resultado: la velocidad de animaciones aplicada al duelo
+#include "resultado_juego.h"   // rama classic-resultado: pantalla de resultado, revancha, musica y Fase de Espera
+#include "duelo_consulta.h"   // rama classic-duelo-ui: registro, visores de zonas, cadena visible y jugables
+#include "entrada_clave_juego.h"   // rama classic-cartas-clave: entrada especial de las cartas clave (camara, figura, efectos, sonidos)
+#include "menu_principal.h"   // rama classic-menus: menu principal (Duelo, Historia, Construir mazo, Opciones, Salir)
+#include "cosmeticos_juego.h"  // rama classic-extras: Personalizacion (funda, tapete, controles, estadisticas) y camara recordada
+#include "portada.h"          // rama classic-portada: la portada (titulo) antes del menu principal
+#include "galeria_juego.h"    // rama classic-galeria: galeria de figuras 3D (desde la Lista de cartas)
 	bool mandoListo{ false };
 	uint32_t teclas{ 0 };   // PC con ventana: lo apretado en el teclado desde el ultimo cuadro (como botones)
 	float camGiro{ 0.0f }, camElev{ 0.0f }, camZoom{ 1.0f };    // ajuste del stick derecho y L2/R2 en las camaras fijas
@@ -1864,7 +1905,9 @@ public:
 		if (getenv("YUGI_MANDO_LOG")) ctl.log = true;
 #endif
 		interfazDuelo.conectarMando(&ctl);
+		interfazDuelo.conectarConsulta(&consulta);   // rama classic-duelo-ui
 		prepararDuelo();
+		prepararMenu();   // rama classic-menus: el juego arranca en el menu principal
 		mandoListo = true;
 	}
 
@@ -1882,6 +1925,7 @@ public:
 		if (pad & PAD_L1) r |= control::B_L1;
 		if (pad & PAD_R1) r |= control::B_R1;
 		if (pad & PAD_R3) r |= control::B_R3;
+		if (pad & PAD_L3) r |= control::B_L3;   // rama classic-duelo-ui: registro del duelo
 		return r;
 	}
 
@@ -1901,7 +1945,9 @@ public:
 		case 'Q': case 'q': teclas |= control::B_L1; break;
 		case 'E': case 'e': teclas |= control::B_R1; break;
 		case 'R': case 'r': teclas |= control::B_R3; break;
+		case 'L': case 'l': teclas |= control::B_L3; break;   // rama classic-duelo-ui: L3 (registro)
 		case 'M': case 'm': pedidoConstructor = true; break;   // rama classic-constructor: abrir "Construir mazo"
+		case 'K': case 'k': pedidoLista = true; break;   // rama classic-constructor2: la lista de cartas (solo ver; la L es L3)
 		case 'O': case 'o': teclas |= control::B_OPTIONS; break;   // rama classic-arreglos: OPTIONS corto (pausa)
 		default: break;
 		}
@@ -1912,6 +1958,9 @@ public:
 	{
 		if (!mandoListo) {
 			return;
+		}
+		if (constructorMazo.abierto) {
+			return;   // rama classic-constructor2: el constructor se queda con el mando (y con el guion del PC)
 		}
 		const float dt = glm::clamp(frameTimer, 0.0f, 0.1f);
 		// el guion (PC) y el teclado entran como botones del mando; L1/R1/R3 tambien para la camara
@@ -1933,6 +1982,7 @@ public:
 		const uint32_t pulsos = repetidor.paso(botonesDe(mando.held), recien, mando.left_x, mando.left_y, dt) | (recien & ~control::B_DIRECCIONES);
 		registrarBotones(recien);   // rama classic-arreglos: [boton] ... en el klog
 		if (extra & control::B_OPTIONS) pausa.abajo = std::max(pausa.abajo, 0.01f);   // (PC: tecla O o el guion = un OPTIONS corto)
+		vigilarAjustes();   // rama classic-menus: los Ajustes de desarrollo solo con la combinacion secreta
 		// rama classic-arreglos: OPTIONS corto abre/cierra la pausa (y cierra los Ajustes); la pausa abierta se queda
 		// con el mando (duelo_juego.h)
 		if (avanzarPausa(pulsos)) {
@@ -1952,7 +2002,13 @@ public:
 			procesarEventos();
 			return;
 		}
-		ctl.avanzar(dt, pulsos);
+		if (mandoConsulta(pulsos, dt)) {   // rama classic-duelo-ui: el panel de registro y visores (L3, X en la zona)
+			procesarEventos();
+			return;
+		}
+		ctl.ejeDetalle = fabsf(mando.right_y) > 0.2f ? mando.right_y : 0.0f;   // rama classic-pulido: desplaza el detalle
+		ctl.avanzar(dt * escalaMesa(), pulsos);   // (rama classic-resultado: velocidad de animaciones)
+		if (ctl.estado == control::DETALLE) mando.right_x = mando.right_y = 0.0f;   // (con el detalle el stick no mueve la camara)
 		procesarEventos();
 		sonidoDuelo.cuadro(sonido, ctl, pulsos, tAtaque, T_IMPACTO, interfazDuelo.lp(false), interfazDuelo.lp(true));   // rama classic-audio
 	}
@@ -2114,15 +2170,17 @@ public:
 		VulkanExampleBase::prepareFrame();
 		tiempo += frameTimer;
 		avanzarAtaque();
+		avanzarGaleria();       // rama classic-galeria: abierta, se queda con el mando (antes que el constructor)
 		avanzarConstructor();   // rama classic-constructor: si "Construir mazo" esta abierto, se queda con el mando
 		avanzarMando();       // foco, menus, invocar/colocar/atacar desde la mano y el campo (control.h)
 		if (mandoListo && !ajustesAbiertos() && !constructorMazo.abierto && !pausa.abierta && !congelarIAFig) {   // (la pausa detiene el duelo)
 			avanzarDueloIA(glm::clamp(frameTimer, 0.0f, 0.1f));   // rama classic-integracion: el duelo real y el turno del rival
+			avanzarConsulta(glm::clamp(frameTimer, 0.0f, 0.1f));   // rama classic-duelo-ui: registro, pila de la cadena y jugables
 		}
-		avanzarFiguras(glm::clamp(frameTimer, 0.0f, 0.1f));   // rama classic-figuras
+		avanzarFiguras(dtAnim(glm::clamp(frameTimer, 0.0f, 0.1f)));   // rama classic-figuras (classic-resultado: con la velocidad)
 		avanzarCamara();      // selector de camara (L1/R1)
 		avanzarCampo();       // carta de campo Bosque
-		avanzarEfectosCartas(glm::clamp(frameTimer, 0.0f, 0.1f));   // rama classic-fx-md
+		avanzarEfectosCartas(dtAnim(glm::clamp(frameTimer, 0.0f, 0.1f)));   // rama classic-fx-md (classic-resultado: con la velocidad)
 		avanzarEntorno();     // entorno del rival (rama classic-entornos)
 		interfazDuelo.actualizar(mando, frameTimer, !ajustesAbiertos());
 		revisarCapturas();
@@ -2141,16 +2199,10 @@ public:
 				idioma::poner(lengua);
 			}
 			overlay->checkBox(idioma::tr("Camara que respira"), &respirar);
-			overlay->checkBox(idioma::tr("Figuras 3D"), &figuras3D);   // rama classic-figuras
+			// (Figuras 3D y Dificultad adaptable: en Opciones del menu, rama classic-portada)
 			int32_t camara = modoCamara;
 			if (overlay->comboBox(idioma::tr("Camara"), &camara, { idioma::tr("Cine"), idioma::tr("Tablero"), idioma::tr("Cenital"), idioma::tr("Lateral"), idioma::tr("Libre") })) {
 				cambiarCamara(camara, 0);
-			}
-			// rama classic-variedad: la IA se ajusta a la racha del jugador (ia_plan.h); se guarda en variedad.txt
-			bool adaptable = memoriaIA.adaptable;
-			if (overlay->checkBox(idioma::tr("Dificultad adaptable"), &adaptable)) {
-				memoriaIA.adaptable = adaptable;
-				memoriaIA.guardar();
 			}
 			// rama classic-integracion: dejar el duelo en curso (cuenta como derrota) y volver a elegir rival
 			if (ctl.vista.pantalla == control::VistaDuelo::DUELO && overlay->button(idioma::tr("Abandonar duelo"))) {
