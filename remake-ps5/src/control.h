@@ -1226,7 +1226,9 @@ private:
 		const ia::Monstruo& mo = x.m[(size_t)i];
 		if (!mo.bocaAbajo) {   // rama classic-efectos: efecto de ignicion
 			const ia::DefCarta* df = ia::defCarta(mo.id);
-			if (df && df->ignicion) opcionActivar(r, { 0, ia::EN_MONSTRUO, i }, mio, "Activar efecto");
+			if (df && ia::geminisPendiente(d, { 0, ia::EN_MONSTRUO, i }))   // (rama classic-torneo-extras: Geminis, Il Blud)
+				opcionActivar(r, { 0, ia::EN_MONSTRUO, i }, mio, "Invocación normal (Géminis)");
+			else if (df && df->ignicion) opcionActivar(r, { 0, ia::EN_MONSTRUO, i }, mio, "Activar efecto");
 		}
 		if (d.efectos)   // rama classic-motor2: los X-Y-Z se invocan desterrando sus piezas del campo (sin Polymerization)
 			for (const std::string& fus : x.extra) {

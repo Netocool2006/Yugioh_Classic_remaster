@@ -47,6 +47,23 @@ Al final de la lista está **+ Nuevo mazo**.
 | Cuadrado | Usar ese mazo en los duelos (solo si es válido; si no, dice por qué) |
 | Círculo | Volver al menú principal |
 
+### MAZOS DE TORNEO (rama classic-torneo-extras)
+
+Como los Structure Deck de Master Duel: **Triángulo** en MIS MAZOS abre los 21 mazos de torneo (los de los rivales:
+`datos/mazos_torneo.txt`, ver `docs/mazos_torneo.md`), con la misma lista y la vista previa (contadores y cartas). El
+nombre sale en el idioma activo.
+
+| Botón | Acción |
+|---|---|
+| Cruz arriba/abajo | Elegir un mazo de torneo |
+| X | Acciones: Copiar a mis mazos, Copiar y editar (abre el editor sobre la copia), Volver |
+| Cuadrado | Copiar a mis mazos |
+| Círculo | Volver a MIS MAZOS |
+
+La copia es un mazo más (cuenta para los 20, se renombra, se usa en los duelos y se edita como cualquiera); el mazo de
+torneo original no cambia. Los carga `mazo::leerMazosTorneo` (en `mazo_duelo.h::prepararMazos`). Textos ES/EN en
+`idioma.h`. Pruebas: `prueba_constructor.cpp` (sección 5) y `CU-FE-CONS-TORNEO-*`.
+
 ### Editor (pantalla dividida)
 
 - **Izquierda, el detalle:** la carta grande (HD si existe) y debajo el nombre, la clase y el subtipo ("Magia de campo",

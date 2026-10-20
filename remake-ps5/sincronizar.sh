@@ -125,7 +125,7 @@ else
 fi
 # rama classic-ia: los 40 rivales y sus 120 mazos (rivales_gen.py)
 if [[ -f "$src/datos/rivales.txt" ]]; then cp "$src/datos/rivales.txt" "$t/ps5/assets/ui/"; fi
-for f in roles_cartas.txt combos.txt; do if [[ -f "$src/datos/$f" ]]; then cp "$src/datos/$f" "$t/ps5/assets/ui/"; fi; done   # rama classic-variedad
+for f in roles_cartas.txt combos.txt mazos_torneo.txt; do if [[ -f "$src/datos/$f" ]]; then cp "$src/datos/$f" "$t/ps5/assets/ui/"; fi; done   # rama classic-variedad
 # rama classic-figuras: id de carta emblematica -> slug de su figura 3D (emblematicas_gen.py)
 if [[ -f "$src/datos/figuras.txt" ]]; then cp "$src/datos/figuras.txt" "$t/ps5/assets/ui/"; fi
 # rama classic-fx-md: efectos de Master Duel (copia del usuario, herramientas/fx_md, no van al repo): flipbooks horneados

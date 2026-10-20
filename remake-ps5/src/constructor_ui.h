@@ -368,7 +368,7 @@ private:
 		caja(0.0f, 0.0f, W, H, 0.0f, PANEL, glm::vec4(0.012f, 0.018f, 0.036f, 1.0f), NADA, 0.0f, glm::vec4(0.0f));
 		rect(glm::vec2(W * 0.5f, H * 0.42f), glm::vec2(W * 1.1f, H * 0.9f), 0.0f, 0.0f, PARTICULA, glm::vec4(glm::vec3(CIAN) * 0.06f, 1.0f), NADA, 0.0f,
 		     glm::vec4(0.0f));
-		if (c.pantalla == constructor::P_LISTA) dibujarListaMazos(c);
+		if (c.pantalla == constructor::P_LISTA || c.pantalla == constructor::P_TORNEO) dibujarListaMazos(c);   // (P_TORNEO: rama classic-torneo-extras)
 		else dibujarEditor(c);
 		if (c.capa == constructor::K_FILTROS || (c.capa == constructor::K_TECLADO && c.modoTeclado == constructor::T_BUSCAR)) dibujarFiltros(c);
 		if (c.capa == constructor::K_TECLADO) dibujarTeclado(c);
@@ -390,34 +390,43 @@ private:
 	{
 		using constructor::T;
 		const mazo::Biblioteca& b = *c.bib;
+		// (rama classic-torneo-extras) MAZOS DE TORNEO: la misma lista con los mazos de torneo, sin "+ Nuevo mazo" ni "EN USO"
+		const bool tor = c.pantalla == constructor::P_TORNEO;
+		const bool en = constructor::enIngles();
+		const int cursorL = tor ? c.cursorTorneo : c.cursorLista;
+		auto mazoFila = [&](int i) -> const mazo::Mazo& { return tor ? c.torneos[(size_t)i].mazo : b.mazos[(size_t)i]; };
+		auto nombreFila = [&](int i) -> const std::string& { return tor ? c.torneos[(size_t)i].nombre(en) : b.mazos[(size_t)i].nombre; };
 		texto(F_NUMEROS, T("CONSTRUIR MAZO"), 60.0f * s, 70.0f * s, 34.0f * s, BLANCO, CIAN, glm::vec3(0.5f, 0.0f, 0.6f), 0, 2.0f);
-		texto(F_TITULO, T("MIS MAZOS") + "  ·  " + std::to_string(b.mazos.size()) + " / " + std::to_string(mazo::MAX_MAZOS), 60.0f * s, 104.0f * s, 20.0f * s, GRIS, NADA,
-		      glm::vec3(0.0f), 0, 1.5f);
+		if (tor)
+			texto(F_TITULO, T("MAZOS DE TORNEO") + "  ·  " + std::to_string(c.torneos.size()), 60.0f * s, 104.0f * s, 20.0f * s, ORO, NADA, glm::vec3(0.0f), 0, 1.5f);
+		else
+			texto(F_TITULO, T("MIS MAZOS") + "  ·  " + std::to_string(b.mazos.size()) + " / " + std::to_string(mazo::MAX_MAZOS), 60.0f * s, 104.0f * s, 20.0f * s, GRIS,
+			      NADA, glm::vec3(0.0f), 0, 1.5f);
 		// lista
 		const float lx = 60.0f * s, ly = 130.0f * s, lw = 820.0f * s, fila = 66.0f * s;
-		const int n = (int)b.mazos.size() + 1, visibles = 12;
-		const int desde = std::clamp(c.cursorLista - visibles / 2, 0, std::max(0, n - visibles));
+		const int n = tor ? (int)c.torneos.size() : (int)b.mazos.size() + 1, visibles = 12;
+		const int desde = std::clamp(cursorL - visibles / 2, 0, std::max(0, n - visibles));
 		panel(lx - 16.0f * s, ly - 14.0f * s, lw + 32.0f * s, fila * visibles + 28.0f * s, glm::vec4(glm::vec3(CIAN) * 0.6f, 1.0f));
 		for (int i = desde; i < std::min(n, desde + visibles); i++) {
 			const float y = ly + (float)(i - desde) * fila;
-			const bool sel = i == c.cursorLista;
+			const bool sel = i == cursorL;
 			usar(setAtlas, false);
 			caja(lx, y, lw, fila - 8.0f * s, 6.0f * s, PANEL, sel ? glm::vec4(0.16f, 0.13f, 0.06f, 0.95f) : glm::vec4(0.04f, 0.06f, 0.11f, 0.9f),
 			     sel ? ORO : glm::vec4(0.25f, 0.32f, 0.45f, 1.0f), 10.0f * s, glm::vec4((sel ? 2.0f : 1.0f) * s, sel ? 1.4f : 0.6f, 0.0f, 0.0f));
 			const float base = y + (fila - 8.0f * s) * 0.5f + 8.0f * s;
-			if (i == n - 1) {
+			if (!tor && i == n - 1) {
 				texto(F_TITULO, T("+ Nuevo mazo"), lx + 54.0f * s, base, 23.0f * s, sel ? ORO : CIAN, NADA, glm::vec3(0.0f), 0, 1.0f);
 				continue;
 			}
-			const mazo::Mazo& m = b.mazos[(size_t)i];
+			const mazo::Mazo& m = mazoFila(i);
 			std::string motivo;
 			const bool ok = m.valido(*c.col, &motivo);
-			if (i == b.activo) {   // (el mazo de los duelos: un orbe dorado y "EN USO")
+			if (!tor && i == b.activo) {   // (el mazo de los duelos: un orbe dorado y "EN USO")
 				usar(setAtlas, false);
 				rect(glm::vec2(lx + 28.0f * s, y + (fila - 8.0f * s) * 0.5f), glm::vec2(18.0f * s), 0.0f, 6.0f * s, ORBE, ORO, glm::vec4(1.0f, 0.95f, 0.7f, 1.0f), 0.0f, glm::vec4(0.3f, 1.0f, 0.0f, 0.0f));
 				etiqueta(lx + 600.0f * s, y + (fila - 8.0f * s) * 0.5f - 11.0f * s, T("EN USO"), 14.0f * s, ORO);
 			}
-			textoCrudo(F_TITULO, recortar(F_TITULO, m.nombre, 23.0f * s, 400.0f * s), lx + 54.0f * s, base, 23.0f * s, sel ? BLANCO : glm::vec4(0.85f, 0.9f, 0.97f, 1.0f));
+			textoCrudo(F_TITULO, recortar(F_TITULO, nombreFila(i), 23.0f * s, 400.0f * s), lx + 54.0f * s, base, 23.0f * s, sel ? BLANCO : glm::vec4(0.85f, 0.9f, 0.97f, 1.0f));
 			textoCrudo(F_NUMEROS, std::to_string(m.principal.size()) + " + " + std::to_string(m.fusion.size()), lx + 500.0f * s, base, 19.0f * s, GRIS);
 			const glm::vec4 verde(0.45f, 1.0f, 0.62f, 1.0f);
 			texto(F_TITULO, ok ? T("VÁLIDO") : T("NO VÁLIDO"), lx + lw - 20.0f * s, base, 18.0f * s, ok ? verde : ORO, NADA, glm::vec3(0.0f), 2, 1.0f);
@@ -425,12 +434,12 @@ private:
 		// vista previa del elegido
 		const float px = 930.0f * s, py = 116.0f * s, pw = W - px - 50.0f * s, ph = 820.0f * s;
 		panel(px, py, pw, ph, glm::vec4(glm::vec3(ORO) * 0.6f, 1.0f));
-		if (c.cursorLista >= (int)b.mazos.size()) {
+		if (tor ? cursorL < 0 || cursorL >= n : c.cursorLista >= (int)b.mazos.size()) {
 			parrafo(F_TITULO, T("Crea un mazo vacío y ponle nombre con el teclado en pantalla. Se guarda cuando tenga entre 40 y 60 cartas."), px + 40.0f * s,
 			        py + 70.0f * s, 24.0f * s, pw - 80.0f * s, 32.0f * s, 6, GRIS);
 		} else {
-			const mazo::Mazo& m = b.mazos[(size_t)c.cursorLista];
-			textoCrudo(F_TITULO, recortar(F_TITULO, m.nombre, 30.0f * s, pw - 80.0f * s), px + 36.0f * s, py + 52.0f * s, 30.0f * s, BLANCO);
+			const mazo::Mazo& m = mazoFila(cursorL);
+			textoCrudo(F_TITULO, recortar(F_TITULO, nombreFila(cursorL), 30.0f * s, pw - 80.0f * s), px + 36.0f * s, py + 52.0f * s, 30.0f * s, BLANCO);
 			int mo = 0, mg = 0, tr = 0;
 			for (const std::string& id : m.principal) {
 				const mazo::Carta* k = c.col->carta(id);
@@ -452,7 +461,8 @@ private:
 			dato("EXTRA", std::to_string(m.fusion.size()), colorClase("fusion"));
 			std::string motivo;
 			const bool ok = m.valido(*c.col, &motivo);
-			const std::string estado = c.cursorLista == b.activo ? T("Mazo de los duelos (en uso)") : ok ? T("Válido: Cuadrado lo usa en los duelos") : motivo;
+			const std::string estado = tor ? (ok ? T("Mazo de torneo: Cuadrado lo copia a tus mazos") : motivo)
+			                           : c.cursorLista == b.activo ? T("Mazo de los duelos (en uso)") : ok ? T("Válido: Cuadrado lo usa en los duelos") : motivo;
 			textoCrudo(F_TITULO, recortar(F_TITULO, estado, 19.0f * s, pw - 72.0f * s), px + 36.0f * s, py + 126.0f * s, 19.0f * s,
 			           ok ? glm::vec4(0.45f, 1.0f, 0.62f, 1.0f) : ORO);
 			// las cartas distintas del mazo (las de campo y el extra incluidos)
@@ -472,7 +482,9 @@ private:
 				if (cu > 1) etiqueta(ce.x + tam.x * 0.5f - 26.0f * s, ce.y + tam.y * 0.5f - 24.0f * s, "x" + std::to_string(cu), 13.0f * s, ORO);
 			}
 		}
-		if (c.capa == constructor::K_NADA) barraBotones({ { "CRUZ", "Elegir" }, { "X", "Acciones" }, { "C", "Usar en los duelos" }, { "O", "Menú principal" } });
+		if (c.capa == constructor::K_NADA && tor) barraBotones({ { "CRUZ", "Elegir" }, { "X", "Acciones" }, { "C", "Copiar a mis mazos" }, { "O", "Volver" } });
+		else if (c.capa == constructor::K_NADA)
+			barraBotones({ { "CRUZ", "Elegir" }, { "X", "Acciones" }, { "C", "Usar en los duelos" }, { "T", "Mazos de torneo" }, { "O", "Menú principal" } });
 	}
 
 	// ---- EDITOR

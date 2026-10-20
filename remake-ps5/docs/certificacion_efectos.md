@@ -4,13 +4,13 @@ Generado por `src/pruebas/prueba_certificacion.cpp` (rama classic-probador; corr
 
 ## Resumen
 
-**1385 cartas con efecto** (de 1774): **OK 1385**, **FALLA 0**, **SIN PRUEBA 0**.
+**1395 cartas con efecto** (de 1784): **OK 1395**, **FALLA 0**, **SIN PRUEBA 0**.
 
-- Casos a mano (prueba_efectos.cpp): 871 casos, 0 fallos. Solo cuentan para una carta si el caso la usa en su escenario: 153 cartas aparecen unicamente en listas `probadas[id]++` de un caso sin que el caso las use, y para esas el caso no cuenta.
-- De las OK: 430 por caso a mano y plantilla, 779 solo por su caso a mano (la plantilla no pudo verlas en el escenario generico), 176 solo por la plantilla.
-- Escenas de los casos presentadas en el front desde la mesa vacia: 1668 (0 con fallas).
+- Casos a mano (prueba_efectos.cpp): 881 casos, 0 fallos. Solo cuentan para una carta si el caso la usa en su escenario: 153 cartas aparecen unicamente en listas `probadas[id]++` de un caso sin que el caso las use, y para esas el caso no cuenta.
+- De las OK: 435 por caso a mano y plantilla, 784 solo por su caso a mano (la plantilla no pudo verlas en el escenario generico), 176 solo por la plantilla.
+- Escenas de los casos presentadas en el front desde la mesa vacia: 1693 (0 con fallas).
 - Duracion ("hasta el final del turno": ATK/DEF y control vuelven al pasar el turno): 25 comprobadas, 25 bien.
-- Tiempo: 4 s.
+- Tiempo: 6 s.
 
 Como se certifica cada carta:
 
@@ -27,12 +27,13 @@ Estado: **FALLA** si falla cualquiera de las tres; **OK** si lo certifica un cas
 | Magia (campo) | 25 | 0 | 0 |
 | Magia (continua) | 70 | 0 | 0 |
 | Magia (equipo) | 84 | 0 | 0 |
-| Magia (normal) | 170 | 0 | 0 |
+| Magia (normal) | 172 | 0 | 0 |
 | Magia (rapida) | 35 | 0 | 0 |
 | Magia (ritual) | 19 | 0 | 0 |
-| Monstruo (efecto) | 555 | 0 | 0 |
-| Monstruo (espiritu) | 12 | 0 | 0 |
+| Monstruo (efecto) | 561 | 0 | 0 |
+| Monstruo (espiritu) | 13 | 0 | 0 |
 | Monstruo (fusion) | 24 | 0 | 0 |
+| Monstruo (geminis) | 1 | 0 | 0 |
 | Monstruo (ritual) | 17 | 0 | 0 |
 | Monstruo (toon) | 9 | 0 | 0 |
 | Monstruo (union) | 13 | 0 | 0 |
@@ -40,28 +41,28 @@ Estado: **FALLA** si falla cualquiera de las tres; **OK** si lo certifica un cas
 | Trampa (continua) | 85 | 0 | 0 |
 | Trampa (contraataque) | 21 | 0 | 0 |
 | Trampa (normal) | 171 | 0 | 0 |
-| **total** | **1385** | **0** | **0** |
+| **total** | **1395** | **0** | **0** |
 
 ## Por tipo de efecto (familia principal del texto)
 
 | familia | OK | FALLA | SIN PRUEBA |
 |---|---:|---:|---:|
 | a_la_mano | 18 | 0 | 0 |
-| al_mazo | 15 | 0 | 0 |
-| atk_def | 124 | 0 | 0 |
+| al_mazo | 16 | 0 | 0 |
+| atk_def | 125 | 0 | 0 |
 | buscar | 22 | 0 | 0 |
 | control | 19 | 0 | 0 |
-| descartar | 38 | 0 | 0 |
+| descartar | 39 | 0 | 0 |
 | desterrar | 33 | 0 | 0 |
-| destruir | 255 | 0 | 0 |
+| destruir | 258 | 0 | 0 |
 | equipar | 66 | 0 | 0 |
 | ficha | 1 | 0 | 0 |
 | ganar_lp | 42 | 0 | 0 |
-| invocar | 193 | 0 | 0 |
+| invocar | 195 | 0 | 0 |
 | negar | 39 | 0 | 0 |
-| otra / continua | 274 | 0 | 0 |
+| otra / continua | 275 | 0 | 0 |
 | posicion | 55 | 0 | 0 |
-| quemar | 150 | 0 | 0 |
+| quemar | 151 | 0 | 0 |
 | recuperar | 5 | 0 | 0 |
 | robar | 36 | 0 | 0 |
 ## Arreglos hechos (lo que el probador encontro)
@@ -324,7 +325,7 @@ Expectativas de la plantilla ajustadas a mano (la plantilla no puede ver su efec
 - `impenetrable_formation`: plantilla: queda vinculada al monstruo elegido (se ve como equipo); el +700 DEF pide 2+ monstruos todos en defensa (caso a mano)
 - `insect_queen`: plantilla: para atacar sacrifica 1 monstruo (se ve como destruir); la ficha sale en la fase final (caso a mano)
 
-Plantilla por carta: 606 OK, 0 FALLA, 779 sin prueba (no se pudo activar en los escenarios genericos A/B/C o su efecto no se ve ahi: condiciones de tipo, nivel, contadores, azar, efectos continuos). Esas cartas quedan certificadas por su caso a mano; la columna `motivo_plantilla` del CSV dice por que.
+Plantilla por carta: 611 OK, 0 FALLA, 784 sin prueba (no se pudo activar en los escenarios genericos A/B/C o su efecto no se ve ahi: condiciones de tipo, nivel, contadores, azar, efectos continuos). Esas cartas quedan certificadas por su caso a mano; la columna `motivo_plantilla` del CSV dice por que.
 
 ## Escenas de los casos con fallas en el front (0)
 

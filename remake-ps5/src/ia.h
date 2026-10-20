@@ -180,6 +180,7 @@ static const TextoIA TEXTOS_EFECTO[] = {
 	{ "ef.no_velocidad", "Velocidad de hechizo insuficiente", "Spell Speed too low" },
 	{ "ef.solo_principal", "Solo en tu fase principal", "Only in your Main Phase" },
 	{ "ef.una_vez", "Ya usó su efecto este turno", "Already used its effect this turn" },
+	{ "ef.ya_invoco", "Ya hiciste tu invocación normal este turno", "You already Normal Summoned this turn" },
 	{ "ef.trampa_colocada", "Las trampas se colocan primero", "Traps must be Set first" },
 	{ "ef.sin_zona", "No hay zonas de magia y trampa libres", "No free Spell & Trap Zones" },
 	{ "ef.ya_activa", "Ya está activa", "Already active" },
@@ -230,6 +231,9 @@ static const TextoIA TEXTOS_EFECTO[] = {
 	{ "ef.elegir.cara", "¿cara? (No: cruz)", "heads? (No: tails)" },
 	{ "ef.elegir.pagar_opresion", "¿pagar 800 LP para negar la invocacion y destruirlo?", "pay 800 LP to negate the Summon and destroy it?" },
 	{ "ef.elegir.cementerio", "elige la carta que va al cementerio", "choose the card to send to the Graveyard" },
+	{ "ef.elegir.barajar", "elige una carta de tu mano para barajarla en el mazo (No: terminar)", "choose a card in your hand to shuffle into the Deck (No: finish)" },
+	{ "ef.elegir.izanagi", "¿devolver este Spirit a la mano? (No: se queda)", "return this Spirit to the hand? (No: it stays)" },
+	{ "ef.elegir.invocar_zombi", "elige un Zombi de tu mano o de un cementerio para invocarlo", "choose a Zombie in your hand or a Graveyard to Special Summon" },
 	{ "ef.elegir.mano", "elige el monstruo que vuelve a la mano", "choose the monster to return to the hand" },
 	{ "ef.elegir.revelar", "elige una carta colocada para mirarla", "choose a Set card to look at" },
 	{ "ef.elegir.equipo", "elige una carta de equipo", "choose an Equip Card" },
@@ -276,6 +280,9 @@ struct Rival {
 	bool personaje{ false };
 	std::string saga;
 	std::vector<std::string> varEs, varEn;
+	// rama classic-mazos-torneo: sus mazos de torneo (indices de Base::torneos; datos/mazos_torneo.txt). No son
+	// variantes de principal: el mazo dinamico y los pools no los ven, y si sale uno se juega tal cual
+	std::vector<int> torneo;
 	const Personalidad& personalidad() const { return personalidadPorClave(clavePersonalidad); }
 	const std::string& nombre(bool ingles) const { return ingles ? nombreEn : nombreEs; }
 	const std::string& lema(bool ingles) const { return ingles ? lemaEn : lemaEs; }
@@ -285,12 +292,20 @@ struct MazoRival {
 	int variante{ 0 };
 	std::vector<std::string> principal, fusion;
 	int plan{ -1 };   // rama classic-variedad: el plan de juego elegido para este duelo (ia_plan.h; -1 = sin plan)
+	int torneo{ -1 }; // rama classic-mazos-torneo: indice en Base::torneos si es un mazo de torneo (tal cual)
+};
+// rama classic-mazos-torneo: un mazo de torneo curado (datos/mazos_torneo.txt, lo escribe mazos_torneo.py)
+struct MazoTorneo {
+	std::string clave, plan, nombreEs, nombreEn;
+	std::vector<std::string> principal, fusion, claves;   // claves: sus cartas clave (la prueba mide que las juegue)
+	const std::string& nombre(bool ingles) const { return ingles ? nombreEn : nombreEs; }
 };
 // rama classic-variedad: un combo conocido (datos/combos.txt; ver ia_plan.h)
 struct Combo {
 	std::string clave, plan;
 	std::vector<std::string> piezas;   // id, @papel, %subtipo o &raza
 	int minimo{ 2 };
+	bool torneo{ false };   // (rama classic-mazos-torneo) 6o campo "torneo": solo bono en el duelo, no arma mazos dinamicos
 };
 
 constexpr int NIVEL_MAX = 8;
@@ -336,10 +351,60 @@ public:
 			c.piezas = palabras(p[2]);
 			c.minimo = std::max(1, atoi(p[3].c_str()));
 			c.plan = p[4];
+			c.torneo = p.size() > 5 && p[5] == "torneo";
 			combos.push_back(c);
 		}
 		fprintf(stderr, "[ia] variedad: %d cartas con papel, %d combos\n", (int)papeles.size(), (int)combos.size());
+		leerTorneo(carpetaUi + "mazos_torneo.txt");   // (rama classic-mazos-torneo; opcional)
 		return !papeles.empty();
+	}
+
+	// rama classic-mazos-torneo: mazos de torneo curados y a que rivales van (lineas D/M/X/K/A; ver mazos_torneo.py).
+	// Se leen despues de los rivales (las lineas A los buscan por clave). Volver a leer no duplica nada
+	std::vector<MazoTorneo> torneos;
+	int indiceTorneo(const std::string& clave) const
+	{
+		for (size_t i = 0; i < torneos.size(); i++)
+			if (torneos[i].clave == clave) return (int)i;
+		return -1;
+	}
+	bool leerTorneo(const std::string& ruta)
+	{
+		std::ifstream f(ruta);
+		if (!f) return false;
+		std::string l;
+		int asignados = 0;
+		while (std::getline(f, l)) {
+			if (!l.empty() && l.back() == '\r') l.pop_back();
+			if (l.size() < 3 || l[0] == '#' || l[1] != '|') continue;
+			auto p = partir(l, '|');
+			if (p.size() < 3) continue;
+			const char t = l[0];
+			if (t == 'D' && p.size() >= 5) {
+				if (indiceTorneo(p[1]) >= 0) continue;
+				MazoTorneo m;
+				m.clave = p[1];
+				m.plan = p[2];
+				m.nombreEs = p[3];
+				m.nombreEn = p[4];
+				torneos.push_back(m);
+				continue;
+			}
+			const int k = t == 'A' ? -1 : indiceTorneo(p[1]);
+			if (t == 'M' && k >= 0) torneos[(size_t)k].principal = palabras(p[2]);
+			else if (t == 'X' && k >= 0) torneos[(size_t)k].fusion = palabras(p[2]);
+			else if (t == 'K' && k >= 0) torneos[(size_t)k].claves = palabras(p[2]);
+			else if (t == 'A') {
+				Rival* r = rival(p[1]);
+				if (!r) continue;
+				for (const std::string& c : palabras(p[2])) {
+					const int i = indiceTorneo(c);
+					if (i >= 0 && std::find(r->torneo.begin(), r->torneo.end(), i) == r->torneo.end()) r->torneo.push_back(i), asignados++;
+				}
+			}
+		}
+		fprintf(stderr, "[ia] torneo: %d mazos, %d asignaciones\n", (int)torneos.size(), asignados);
+		return !torneos.empty();
 	}
 
 	bool leerCartas(const std::string& carpetaUi)
@@ -550,6 +615,7 @@ struct Monstruo {
 	std::string atributo;            // atributo cambiado por un efecto ("" = el de la carta: Homunculus)
 	std::string raza;                // (rama classic-motor2) tipo de una ficha ("" = el de la carta: Multiplication of Ants, Physical Double)
 	int nivel{ 0 };                  // (rama classic-motor2) nivel de una ficha (0 = el de la carta)
+	bool geminado{ false };          // (rama classic-torneo-extras) Geminis invocado de nuevo: ya es monstruo de efecto (Il Blud)
 	bool vacia() const { return id.empty(); }
 };
 struct MagiaTrampa {
@@ -769,6 +835,7 @@ struct EstadoEfectos {
 	bool invocandoEspecial{ false };                              // (la invocacion en curso es especial: Sacred Crane)
 	std::vector<int> sombreros;                                   // uid de los "sombreros" de Magical Hats (se van al final de la batalla)
 	std::vector<std::pair<int, int>> charmers;                    // (uid del Charmer, uid del monstruo tomado mientras este boca arriba)
+	std::vector<std::pair<int, int>> ilBlud;                      // (rama classic-torneo-extras: uid de Il Blud, uid del Zombi que invoco)
 	std::array<int, 2> revivalJam{};                              // Revival Jam vuelve en la proxima fase de espera de ese lado
 	bool conSacrificio{ false };                                  // (la invocacion normal en curso uso sacrificios: Zaborg, Mobius)
 	std::array<std::string, 2> combateId{};                       // el combate en calculo: atacante y defensor (Ha Des...)
@@ -991,6 +1058,9 @@ inline bool maquinaEspiritu(const Duelo& d);
 inline bool negadoEnZona(const Duelo& d, const Suceso& s);
 inline bool sasukeGana(const Duelo& d, int uid);
 inline void pedirDisparo(Duelo& d, int lf, const Lugar& g, int efecto, int valor);
+inline int izanagiDe(const Duelo& d, int lado);   // (rama classic-torneo-extras)
+inline float valorGeminis(const Duelo& d, int lado, const Lugar& f);
+constexpr int EF_IZANAGI = 21;                     // (el disparo de Izanagi en la fase final: devolver o no a un Spirit)
 inline bool enManoOMazo(const Duelo& d, int lado, const std::string& id);
 inline void resolverSubirLV(Duelo& d, Eslabon& e);
 inline void gearfriedEspada(Duelo& d, int lado);
@@ -2280,6 +2350,7 @@ inline float valorEnMano(const Duelo& d, const std::string& id)
 	const Carta* c = d.carta(id);
 	if (!c) return 0.0f;
 	if (c->monstruo && c->noInvocable && defCarta(id) && defCarta(id)->puedeProcedimiento) return (float)c->atk;   // (se invoca por su procedimiento)
+	if (id.find("forbidden_one") != std::string::npos) return 2500.0f;   // (rama classic-mazos-torneo: Exodia se junta en la mano)
 	if (c->monstruo) return c->noInvocable || c->clase == "ritual" ? 150.0f : (float)std::max(c->atk, c->def) * (c->nivel >= 7 ? 0.6f : 1.0f);
 	return defCarta(id) ? 900.0f : 350.0f;
 }
@@ -2432,6 +2503,19 @@ inline bool anubisEnCampo(const Duelo& d)
 inline bool enVentanaDanno(const Duelo& d, int lado) { return d.ef.ventana.tipo == V_DANNO && d.ef.ventana.lado == lado; }
 // ---- se puede activar? "" = si; si no, la clave del motivo (textoEfecto)
 // comoRespuesta: en una ventana de respuesta (pregunta P_RESPUESTA o para saber si hay que preguntar)
+
+// (rama classic-torneo-extras) monstruo Geminis boca arriba en el campo que aun es "monstruo normal": se puede invocar de
+// nuevo (invocacion normal del turno) para que gane su efecto (Il Blud). En la mano, el cementerio o boca abajo no
+inline bool esGeminis(const Duelo& d, const std::string& id) { return subtipoDe(d, id) == "geminis"; }
+inline bool geminisPendiente(const Duelo& d, const Lugar& f)
+{
+	if (f.donde != EN_MONSTRUO || f.i < 0 || f.i >= ZONAS || f.lado < 0 || f.lado > 1) return false;
+	const Monstruo& m = d.l[(size_t)f.lado].m[(size_t)f.i];
+	return !m.vacia() && !m.bocaAbajo && !m.geminado && esGeminis(d, m.id);
+}
+// su efecto solo cuenta invocado de nuevo (y boca arriba)
+inline bool geminisActivo(const Monstruo& m) { return !m.vacia() && !m.bocaAbajo && m.geminado; }
+
 inline std::string motivoNoActivar(const Duelo& d, int lado, const Lugar& f, bool comoRespuesta)
 {
 	if (!d.efectos || d.ganador >= 0) return "ef.no";
@@ -2444,6 +2528,12 @@ inline std::string motivoNoActivar(const Duelo& d, int lado, const Lugar& f, boo
 	const Lado& x = d.l[(size_t)lado];
 	const std::string st = c->subtipo;
 	const bool deMonstruo = f.donde == EN_MONSTRUO;
+	if (deMonstruo && f.lado == lado && geminisPendiente(d, f)) {   // (rama classic-torneo-extras) Geminis (regla, no efecto): invocarlo de nuevo con la normal del turno
+		if (comoRespuesta || d.activo != lado || d.ocupado() || !d.principal()) return "ef.no_momento";
+		if (x.invocoNormal) return "ef.ya_invoco";
+		if (!motorPuedeInvocar(d, lado, id, 0) || !motorPuedeInvocarM2(d, lado, 0)) return "ef.no_condicion";
+		return {};
+	}
 	if (deMonstruo && f.lado >= 0 && f.i >= 0 && f.i < ZONAS && efectoNegado(d, d.l[(size_t)f.lado].m[(size_t)f.i])) return "ef.no_momento";   // (Skill Drain...)
 	if (f.donde == EN_MT && f.i >= 0 && f.i < ZONAS && std::find(d.ef.xing.begin(), d.ef.xing.end(), d.l[(size_t)f.lado].mt[(size_t)f.i].uid) != d.ef.xing.end())
 		return "ef.no_momento";   // (Xing Zhen Hu)
@@ -2918,6 +3008,15 @@ inline bool activarCarta(Duelo& d, int lado, const Jugada& j, bool comoRespuesta
 	const std::string id = cartaEn(d, f);
 	const DefCarta& df = *defCarta(id);
 	Lado& x = d.l[(size_t)lado];
+	if (geminisPendiente(d, f)) {   // (rama classic-torneo-extras) Geminis: invocacion normal sobre el que ya esta en el campo (sin cadena)
+		Monstruo& m = x.m[(size_t)f.i];
+		x.invocoNormal = true;
+		m.geminado = true;
+		d.suceso({ S_MODIFICA, lado, f.i, -1, 0, false, id });
+		d.recalcular();
+		motorVentana(d, Ventana{ V_INVOCACION_NORMAL, lado, f.i, m.uid, id });   // (como una invocacion normal: Torrential Tribute...)
+		return true;
+	}
 	if (f.donde == EN_MANO && d.carta(id) && d.carta(id)->monstruo && (df.desdeMano || df.ignicionMano)) {   // se descarta y su efecto entra en la cadena
 		Eslabon e;
 		e.carta = id;
@@ -2939,9 +3038,13 @@ inline bool activarCarta(Duelo& d, int lado, const Jugada& j, bool comoRespuesta
 		} else if (df.pagarProcedimiento) {
 			df.pagarProcedimiento(d, lado);
 		}
-		x.mano.erase(x.mano.begin() + f.i);
+		int k = f.i;   // (rama classic-torneo-extras: un coste de la mano (Izanagi) movio los indices: la misma carta)
+		if (k < 0 || k >= (int)x.mano.size() || x.mano[(size_t)k] != id) k = (int)(std::find(x.mano.begin(), x.mano.end(), id) - x.mano.begin());
+		if (k >= (int)x.mano.size()) return false;
+		x.mano.erase(x.mano.begin() + k);
 		const int dest = df.alCampoRival ? 1 - lado : lado;   // (Lava Golem: al campo del rival)
 		const int z = d.invocarEspecial(dest, id, false, lado);
+		if (z >= 0 && subtipoDe(d, id) == "espiritu") d.l[(size_t)dest].m[(size_t)z].vuelveFinTurno = true;   // (Yamato-no-Kami: vuelve el turno en que se invoca)
 		if (z >= 0) motorVentana(d, Ventana{ V_INVOCACION_ESPECIAL, dest, z, d.l[(size_t)dest].m[(size_t)z].uid, id });
 		return true;
 	}
@@ -3126,6 +3229,7 @@ inline void motorRecalcular(Duelo& d)
 		for (int z = 0; z < ZONAS; z++) {
 			Monstruo& m = d.l[(size_t)a].m[(size_t)z];
 			if (m.vacia()) continue;
+			if (m.bocaAbajo) m.geminado = false;   // (rama classic-torneo-extras: un Geminis boca abajo vuelve a ser normal)
 			int pa = d.atk(m.id) + m.atkTurno + m.atkPerm, pd = d.def(m.id) + m.defTurno + m.defPerm;
 			if (!m.bocaAbajo && !efectoNegado(d, m))   // (Skill Drain...)
 				if (const DefCarta* dp = defCarta(m.id))
@@ -3194,6 +3298,13 @@ inline bool motorAtaqueDirecto(const Duelo& d, int lado, int z)
 	for (const Lado& x : d.l)   // (Shooting Star Bow - Ceal)
 		for (const MagiaTrampa& c : x.mt)
 			if (!c.vacia() && !c.bocaAbajo && (c.id == "shooting_star_bow_ceal" || c.id == "opti_camouflage_armor") && c.eqUid == m.uid && m.uid > 0) return true;
+	{   // (rama classic-torneo-extras) dos o mas Command Knight y nada mas: ninguno se puede atacar, el ataque es directo
+		const Lado& y = d.l[(size_t)(1 - lado)];
+		bool todos = y.monstruos() > 1;
+		for (const Monstruo& o : y.m)
+			if (!o.vacia() && !(arriba(o) && o.id == "command_knight" && !efectoNegado(d, o))) todos = false;
+		if (todos) return true;
+	}
 	{   // (Guardian Kay'est no se puede atacar, pero no impide el ataque directo)
 		bool solo = d.l[(size_t)(1 - lado)].monstruos() > 0;
 		for (const Monstruo& o : d.l[(size_t)(1 - lado)].m)
@@ -3335,6 +3446,10 @@ inline void motorDannoBatalla(Duelo& d, int lado, int z, const Monstruo& m)
 		e.uidFuente = m.uid;
 		e.deMonstruo = true;
 		d.ef.disparos.push_back(e);
+	}
+	if (mid == "goblin_zombie" && d.l[(size_t)lado].m[(size_t)z].uid == m.uid) {   // (rama classic-torneo-extras: Goblin Zombie)
+		dispararMonstruo(d, lado, { lado, EN_MONSTRUO, z }, m.id, m.uid);
+		if (!d.ef.disparos.empty() && d.ef.disparos.back().carta == m.id) d.ef.disparos.back().efecto = 3;
 	}
 	motorDannoBatallaM2(d, lado, z, m);   // (rama classic-motor2: Reaper on the Nightmare, Zombie Tiger...)
 }
@@ -3562,7 +3677,12 @@ inline void motorFinTurno(Duelo& d)
 			Monstruo& m = d.l[(size_t)a].m[(size_t)z];
 			if (m.vacia() || !m.vuelveFinTurno || maquinaEspiritu(d)) continue;   // (Spiritual Energy Settle Machine)
 			m.vuelveFinTurno = false;
-			if (!m.bocaAbajo) d.sacarMonstruo(a, z, true);
+			if (m.bocaAbajo) continue;
+			if (const int zi = izanagiDe(d, a); zi >= 0) {   // (rama classic-torneo-extras) Izanagi: su controlador decide si vuelve
+				pedirDisparo(d, a, { a, EN_MONSTRUO, zi }, EF_IZANAGI, m.uid);
+				continue;
+			}
+			d.sacarMonstruo(a, z, true);
 		}
 	motorFinTurnoM2(d);   // (rama classic-motor2: Dark Necrofear)
 	for (Lado& x : d.l)
@@ -3923,6 +4043,7 @@ inline float valorActivacion(const Duelo& d, int lado, const Lugar& f, Jugada& j
 	if (!df) return -1e9f;
 	j = jugadaActivar(f);
 	j.carta = id;
+	if (geminisPendiente(d, f)) return valorGeminis(d, lado, f);   // (rama classic-torneo-extras: Il Blud)
 	j.objs = objetivosIA(d, lado, *df, f);
 	j.descartes = descartesIA(d, lado, df->descartes, f.donde == EN_MANO ? f.i : -1, id);
 	j.costes = costesIA(d, lado, *df, f);
@@ -6390,6 +6511,7 @@ inline void motorAntesCalculo(Duelo& d, int lado, int za, int otro, int zo, bool
 	}
 	if (oid == "reflect_bounder" && !estabaBocaAbajo && !o.defensa) d.danno(lado, a.atkEf);
 	else if (aid == "ninja_grandmaster_sasuke" && !estabaBocaAbajo && o.defensa) d.alCementerio(otro, zo);
+	else if (aid == "drillroid" && o.defensa) d.alCementerio(otro, zo);   // (rama classic-torneo-extras: Drillroid, en defensa (tambien la volteada))
 	else if (aid == "disc_fighter" && o.defensa && d.defM(o) >= 2000) d.alCementerio(otro, zo);   // (Disc Fighter: sin calculo)
 	else if (aid == "sasuke_samurai" && estabaBocaAbajo && o.defensa) {   // (Sasuke Samurai)
 		const int uidO = o.uid;
@@ -9107,6 +9229,7 @@ inline bool motorAtacable(const Duelo& d, int lado, int z)
 		for (const Monstruo& o : x.m)
 			if (arriba(o) && o.uid != m.uid && razaEs(d, o.id, "Demonio")) return false;
 	if (arriba(m) && m.id != "marauding_captain" && razaEs(d, m.id, "Guerrero") && monstruoArriba(d, lado, "marauding_captain")) return false;
+	if (arriba(m) && m.id == "command_knight" && !efectoNegado(d, m) && x.monstruos() > 1) return false;   // (rama classic-torneo-extras: Command Knight)
 	for (const MagiaTrampa& k : x.mt)   // (Raregold Armor: solo se ataca al equipado)
 		if (!k.vacia() && !k.bocaAbajo && k.id == "raregold_armor" && k.eqUid > 0 && k.eqUid != m.uid && d.porUid(k.eqUid)) return false;
 	if (arriba(m) && m.id.find("amazoness") != std::string::npos && m.id != "amazoness_tiger" && monstruoArriba(d, lado, "amazoness_tiger")) return false;
@@ -9129,6 +9252,20 @@ inline bool motorAtacable(const Duelo& d, int lado, int z)
 inline void motorSaleMonstruo(Duelo& d, const Monstruo& m)
 {
 	motorSaleMonstruoM2(d, m);   // (rama classic-motor2: Ojama King...)
+	if (m.id == "il_blud") {   // (rama classic-torneo-extras) Il Blud deja el campo: se destruyen los Zombis que invoco
+		std::vector<int> suyos;
+		auto& b = d.ef.ilBlud;
+		for (size_t k = 0; k < b.size();)
+			if (b[k].first == m.uid) {
+				suyos.push_back(b[k].second);
+				b.erase(b.begin() + (long)k);
+			} else
+				k++;
+		for (int u : suyos) {
+			int la = -1, z = -1;
+			if (d.porUid(u, &la, &z)) d.alCementerio(la, z);
+		}
+	}
 	auto& v = d.ef.charmers;
 	for (size_t k = 0; k < v.size(); k++) {
 		if (v[k].first != m.uid) continue;
@@ -18320,6 +18457,7 @@ inline bool motorSinDestruirBatallaY(const Duelo& d, int lado, const Monstruo& m
 {
 	if (d.ef.shabti[(size_t)lado] == d.turno && m.id.rfind("gravekeeper_s_", 0) == 0) return true;
 	if (m.id == "the_unhappy_girl" && arriba(m) && !m.defensa) return true;   // (The Unhappy Girl)
+	if (m.id == "obnoxious_celtic_guard" && arriba(m) && !efectoNegado(d, m) && !rival.vacia() && rival.atkEf >= 1900) return true;   // (rama classic-torneo-extras)
 	if (std::find(d.ef.lobos.begin(), d.ef.lobos.end(), m.uid) != d.ef.lobos.end() && m.uid > 0) return true;   // (Lone Wolf)
 	for (const auto& s : d.ef.senuelos)   // (Ninjitsu Art of Decoy)
 		if (s.first == m.uid && s.second == d.turno) return true;
@@ -27053,6 +27191,301 @@ inline void cartasMotor2(TablaCartas& t)
 		};
 	}
 }
+// ---- rama classic-torneo-extras: las 10 cartas extra que faltaban para que los mazos de torneo sean exactos
+// (datos/cartas_extra.txt; docs/mazos_torneo.md). Reglas en el motor: Command Knight (motorAtacable, motorAtaqueDirecto
+// y su +400), Obnoxious Celtic Guard (motorSinDestruirBatallaY), Drillroid (motorAntesCalculo), Goblin Zombie
+// (motorDannoBatalla y su disparo al cementerio), Il Blud (Geminis: geminisPendiente, activarCarta, motorSaleMonstruo),
+// Izanagi (motorFinTurno: el Spirit vuelve solo si su controlador quiere) y Yamato-no-Kami (procedimiento; vuelve la
+// fase final del turno en que se invoca: activarCarta)
+inline int izanagiDe(const Duelo& d, int lado)   // zona de un Izanagi boca arriba con su efecto, o -1
+{
+	for (int z = 0; z < ZONAS; z++) {
+		const Monstruo& m = d.l[(size_t)lado].m[(size_t)z];
+		if (arriba(m) && m.id == "izanagi" && !efectoNegado(d, m)) return z;
+	}
+	return -1;
+}
+// los Zombis que Il Blud puede invocar: de la mano o de cualquier cementerio (los que se pueden invocar de forma especial)
+inline bool zombiIlBlud(const Duelo& d, const std::string& id)
+{
+	const Carta* k = d.carta(id);
+	return k && k->monstruo && razaEs(d, id, "Zombi") && !k->noInvocable && k->subtipo != "espiritu" && k->clase != "fusion" && k->clase != "ritual";
+}
+inline std::vector<Lugar> candIlBlud(const Duelo& d, int lado)
+{
+	std::vector<Lugar> r;
+	const Lado& x = d.l[(size_t)lado];
+	for (int k = 0; k < (int)x.mano.size(); k++)
+		if (zombiIlBlud(d, x.mano[(size_t)k])) r.push_back({ lado, EN_MANO, k });
+	if (!necrovalleEnCampo(d))
+		for (int a = 0; a < 2; a++) {
+			const int ly = (lado + a) % 2;
+			const Lado& y = d.l[(size_t)ly];
+			for (int k = 0; k < (int)y.cementerio.size(); k++)
+				if (zombiIlBlud(d, y.cementerio[(size_t)k])) r.push_back({ ly, EN_CEMENTERIO, k });
+		}
+	return r;
+}
+// IA: invocar de nuevo a Il Blud vale si despues puede sacar un Zombi (y no hay otra invocacion normal mejor en la mano)
+inline float valorGeminis(const Duelo& d, int lado, const Lugar& f)
+{
+	(void)f;
+	if (d.l[(size_t)lado].libre() < 0) return -100.0f;
+	float mejor = 0.0f;
+	for (const Lugar& g : candIlBlud(d, lado)) mejor = std::max(mejor, (float)d.atk(cartaEn(d, g)));
+	if (mejor <= 0.0f) return -100.0f;
+	float mano = 0.0f;   // (lo que valdria gastar la invocacion normal en otro de la mano)
+	for (const std::string& id : d.l[(size_t)lado].mano)
+		if (const Carta* c = d.carta(id))
+			if ((c->clase == "normal" || c->clase == "efecto") && !c->noInvocable && c->nivel <= 4) mano = std::max(mano, (float)c->atk);
+	return 300.0f + 0.5f * mejor - 0.4f * mano;
+}
+inline void cartasTorneoExtras(TablaCartas& t)
+{
+	auto def = [&t](const char* id) -> DefCarta& {
+		DefCarta& c = t[id];
+		c.id = id;
+		return c;
+	};
+	{   // Command Knight: tus Guerreros +400 ATK; si controlas otro monstruo no se le ataca (motorAtacable)
+		DefCarta& c = def("command_knight");
+		c.modAtk = [](const Duelo& d, int lf, const MagiaTrampa* mt, int lado, int z) {
+			if (mt || lado != lf) return 0;
+			const Monstruo& m = d.l[(size_t)lado].m[(size_t)z];
+			return arriba(m) && razaEs(d, m.id, "Guerrero") ? 400 : 0;
+		};
+	}
+	{   // Cyber Dragon: si solo el rival controla monstruos, invocacion especial desde la mano
+		DefCarta& c = def("cyber_dragon");
+		c.puedeProcedimiento = [](const Duelo& d, int lado) { return d.l[(size_t)lado].monstruos() == 0 && d.l[(size_t)(1 - lado)].monstruos() > 0; };
+		c.valor = [](const Duelo&, int, const std::vector<Lugar>&) { return 900.0f; };
+	}
+	{   // Foolish Burial: 1 monstruo de tu mazo al cementerio
+		DefCarta& c = def("foolish_burial");
+		c.condicion = [](const Duelo& d, int lado, const Lugar&) {
+			for (const std::string& id : d.l[(size_t)lado].mazo)
+				if (d.carta(id) && d.carta(id)->monstruo) return true;
+			return false;
+		};
+		c.resolver = [](Duelo& d, Eslabon& e) {
+			Lado& x = d.l[(size_t)e.lado];
+			if (e.paso == 0) {
+				e.paso = 1;
+				const auto cands = candidatosMazo(d, e.lado, [&d](const std::string& id) { return d.carta(id) && d.carta(id)->monstruo; });
+				if (preguntar(d, e, e.lado, "ef.elegir.cementerio", cands, 1)) return;
+			}
+			for (const Lugar& g : e.elegidos) {
+				if (g.donde != EN_MAZO || g.i < 0 || g.i >= (int)x.mazo.size()) continue;
+				const std::string id = x.mazo[(size_t)g.i];
+				x.mazo.erase(x.mazo.begin() + g.i);
+				d.aCementerio(e.lado, id);
+			}
+			barajar(x.mazo, d.ef.azar);
+		};
+		c.elegirIA = [](const Duelo& d, const Eslabon&) {   // (lo que mas sirve en el cementerio: los Sirvientes, los que vuelven, el de mas ATK)
+			const Pregunta& p = d.ef.preg;
+			int mejor = 0;
+			float vm = -1e9f;
+			for (int k = 0; k < (int)p.cands.size(); k++) {
+				const std::string id = cartaEn(d, p.cands[(size_t)k]);
+				float v = (float)d.atk(id);
+				if (id == "king_of_the_skull_servants" || id == "skull_servant") v += 3000.0f;
+				if (id == "spirit_reaper" || id == "sangan" || id == "pyramid_turtle" || id == "vampire_lord" || id == "ryu_kokki") v += 1500.0f;
+				if (v > vm) vm = v, mejor = k;
+			}
+			return mejor;
+		};
+		c.valor = [](const Duelo& d, int lado, const std::vector<Lugar>&) {
+			for (const std::string& id : d.l[(size_t)lado].mazo)
+				if (id == "king_of_the_skull_servants" || id == "skull_servant") return 400.0f;
+			return 150.0f;
+		};
+	}
+	{   // Goblin Zombie: danno de batalla al rival -> la de arriba de su mazo al cementerio (efecto 3, motorDannoBatalla);
+	    // del campo al cementerio -> un Zombi de 1200 DEF o menos del mazo a la mano
+		DefCarta& c = def("goblin_zombie");
+		c.disparo = D_AL_CEMENTERIO;
+		c.resolver = [](Duelo& d, Eslabon& e) {
+			if (e.efecto == 3) {
+				Lado& y = d.l[(size_t)(1 - e.lado)];
+				if (y.mazo.empty()) return;
+				const std::string id = y.mazo.back();
+				y.mazo.pop_back();
+				d.aCementerio(1 - e.lado, id);
+				return;
+			}
+			if (e.paso == 0) {
+				e.paso = 1;
+				const auto cands = candidatosMazo(d, e.lado, [&d](const std::string& id) {
+					const Carta* k = d.carta(id);
+					return k && k->monstruo && razaEs(d, id, "Zombi") && k->def <= 1200;
+				});
+				if (cands.empty()) return;
+				if (preguntar(d, e, e.lado, "ef.elegir.buscar", cands, 1)) return;
+			}
+			for (const Lugar& g : e.elegidos) buscarEnMazo(d, g);
+		};
+	}
+	{   // Il Blud (Geminis): invocado de nuevo, 1 vez por turno invoca un Zombi de la mano o de cualquier cementerio; si Il
+	    // Blud deja el campo, se destruyen los Zombis que invoco (motorSaleMonstruo)
+		DefCarta& c = def("il_blud");
+		c.ignicion = true;
+		c.condicion = [](const Duelo& d, int lado, const Lugar& f) {
+			if (f.donde != EN_MONSTRUO || !geminisActivo(d.l[(size_t)f.lado].m[(size_t)f.i])) return false;
+			return d.l[(size_t)lado].libre() >= 0 && !candIlBlud(d, lado).empty() && motorPuedeInvocarM2(d, lado, 2);
+		};
+		c.resolver = [](Duelo& d, Eslabon& e) {
+			if (e.paso == 0) {
+				e.paso = 1;
+				if (d.l[(size_t)e.lado].libre() < 0) return;
+				if (preguntar(d, e, e.lado, "ef.elegir.invocar_zombi", candIlBlud(d, e.lado), 1)) return;
+			}
+			for (const Lugar& g : e.elegidos) {
+				Lado& x = d.l[(size_t)g.lado];
+				std::vector<std::string>& v = g.donde == EN_MANO ? x.mano : x.cementerio;
+				if (g.i < 0 || g.i >= (int)v.size() || !zombiIlBlud(d, v[(size_t)g.i])) continue;
+				const std::string id = v[(size_t)g.i];
+				v.erase(v.begin() + g.i);
+				const int z = d.invocarEspecial(e.lado, id, false, g.lado);
+				if (z < 0) continue;
+				const int uid = d.l[(size_t)e.lado].m[(size_t)z].uid;
+				if (fuenteSigue(d, e)) d.ef.ilBlud.push_back({ e.uidFuente, uid });
+				else d.alCementerio(e.lado, z);   // (Il Blud ya no esta: se destruye al llegar)
+			}
+		};
+		c.valor = [](const Duelo& d, int lado, const std::vector<Lugar>&) {
+			float mejor = 0.0f;
+			for (const Lugar& g : candIlBlud(d, lado)) mejor = std::max(mejor, (float)d.atk(cartaEn(d, g)));
+			return mejor > 0.0f ? 200.0f + 0.6f * mejor : -100.0f;
+		};
+	}
+	{   // Magical Mallet: las cartas que quieras de la mano al mazo (una a una; No: terminar), se baraja y robas las mismas
+		DefCarta& c = def("magical_mallet");
+		c.resolver = [](Duelo& d, Eslabon& e) {
+			Lado& x = d.l[(size_t)e.lado];
+			// paso 1: preguntando (valor: las elegidas cuando se pregunto la ultima vez). Si eligio otra, se pregunta otra
+			// vez; si paso ("No") o no quedan, se resuelve
+			if (e.paso == 0 || (int)e.elegidos.size() > e.valor) {
+				e.paso = 1;
+				e.valor = (int)e.elegidos.size();
+				std::vector<Lugar> cands;
+				for (int k = 0; k < (int)x.mano.size(); k++)
+					if (std::find(e.elegidos.begin(), e.elegidos.end(), Lugar{ e.lado, EN_MANO, k }) == e.elegidos.end()) cands.push_back({ e.lado, EN_MANO, k });
+				if (preguntar(d, e, e.lado, "ef.elegir.barajar", cands, 1, true)) return;
+			}
+			std::vector<int> idx;
+			for (const Lugar& g : e.elegidos)
+				if (g.donde == EN_MANO && g.i >= 0 && g.i < (int)x.mano.size()) idx.push_back(g.i);
+			std::sort(idx.begin(), idx.end(), std::greater<int>());
+			idx.erase(std::unique(idx.begin(), idx.end()), idx.end());
+			for (int k : idx) {
+				x.mazo.push_back(x.mano[(size_t)k]);
+				x.mano.erase(x.mano.begin() + k);
+			}
+			if (idx.empty()) return;
+			barajar(x.mazo, d.ef.azar);
+			for (size_t k = 0; k < idx.size(); k++) d.robarEfecto(e.lado);
+		};
+		c.elegirIA = [](const Duelo& d, const Eslabon&) {   // (la que menos vale, si vale poco; nunca una pieza de Exodia)
+			const Pregunta& p = d.ef.preg;
+			int peor = -1;
+			float vp = 1e9f;
+			for (int k = 0; k < (int)p.cands.size(); k++) {
+				const std::string id = cartaEn(d, p.cands[(size_t)k]);
+				if (id.find("forbidden_one") != std::string::npos) continue;
+				const float v = valorEnMano(d, id);
+				if (v < vp) vp = v, peor = k;
+			}
+			return peor >= 0 && vp < 700.0f ? peor : -1;
+		};
+		c.valor = [](const Duelo& d, int lado, const std::vector<Lugar>&) {
+			int n = 0;
+			for (const std::string& id : d.l[(size_t)lado].mano) n += id != "magical_mallet" && id.find("forbidden_one") == std::string::npos && valorEnMano(d, id) < 700.0f;
+			return n > 0 ? 100.0f + 150.0f * (float)n : -200.0f;
+		};
+	}
+	{   // Izanagi: invocacion especial desde la mano desterrando 1 Spirit de tu mano; tus Spirit no tienen que volver a la
+	    // mano (motorFinTurno: el disparo EF_IZANAGI pregunta a su controlador)
+		DefCarta& c = def("izanagi");
+		c.puedeProcedimiento = [](const Duelo& d, int lado) {
+			for (const std::string& id : d.l[(size_t)lado].mano)
+				if (subtipoDe(d, id) == "espiritu") return true;
+			return false;
+		};
+		c.nCostes = 1;
+		c.candCostes = [](const Duelo& d, int lado, const Lugar& f, const std::vector<Lugar>& ya) {
+			std::vector<Lugar> r;
+			const Lado& x = d.l[(size_t)lado];
+			for (int k = 0; k < (int)x.mano.size(); k++)
+				if (!(f.donde == EN_MANO && f.i == k) && subtipoDe(d, x.mano[(size_t)k]) == "espiritu" &&
+				    std::find(ya.begin(), ya.end(), Lugar{ lado, EN_MANO, k }) == ya.end())
+					r.push_back({ lado, EN_MANO, k });
+			return r;
+		};
+		c.pagarCostes = [](Duelo& d, int lado, const std::vector<Lugar>& cs) {
+			std::vector<int> idx;
+			for (const Lugar& g : cs)
+				if (g.donde == EN_MANO) idx.push_back(g.i);
+			std::sort(idx.begin(), idx.end(), std::greater<int>());
+			Lado& x = d.l[(size_t)lado];
+			for (int k : idx) {
+				if (k < 0 || k >= (int)x.mano.size()) continue;
+				const std::string id = x.mano[(size_t)k];
+				x.mano.erase(x.mano.begin() + k);
+				x.desterrados.push_back(id);
+				d.suceso({ S_DESTERRADO, lado, -1, -1, 1, false, id });
+			}
+		};
+		c.valor = [](const Duelo&, int, const std::vector<Lugar>&) { return 1300.0f; };
+		c.resolver = [](Duelo& d, Eslabon& e) {   // (efecto EF_IZANAGI: un Spirit en la fase final; valor = su uid)
+			if (e.efecto != EF_IZANAGI) return;
+			int la = -1, z = -1;
+			if (!d.porUid(e.valor, &la, &z)) return;
+			if (e.paso == 0) {
+				e.paso = 1;
+				if (preguntar(d, e, e.lado, "ef.elegir.izanagi", { Lugar{ la, EN_MONSTRUO, z } }, 1, true)) return;
+			}
+			if (!e.elegidos.empty() && d.porUid(e.valor, &la, &z)) d.sacarMonstruo(la, z, true);
+		};
+		c.elegirIA = [](const Duelo&, const Eslabon&) { return -1; };   // (la IA lo deja en el campo)
+	}
+	{   // Yamato-no-Kami (Spirit): no se invoca normal (N de rivales.txt); invocacion especial desterrando 1 Spirit de tu
+	    // cementerio (vuelve a la mano en la fase final de ese turno); si destruye en batalla, puedes destruir 1 magia/trampa
+	    // del rival
+		DefCarta& c = def("yamato_no_kami");
+		c.puedeProcedimiento = [](const Duelo& d, int lado) {
+			for (const std::string& id : d.l[(size_t)lado].cementerio)
+				if (subtipoDe(d, id) == "espiritu") return true;
+			return false;
+		};
+		c.nCostes = 1;
+		c.candCostes = [](const Duelo& d, int lado, const Lugar&, const std::vector<Lugar>& ya) {
+			std::vector<Lugar> r;
+			const Lado& x = d.l[(size_t)lado];
+			for (int k = 0; k < (int)x.cementerio.size(); k++)
+				if (subtipoDe(d, x.cementerio[(size_t)k]) == "espiritu" && std::find(ya.begin(), ya.end(), Lugar{ lado, EN_CEMENTERIO, k }) == ya.end())
+					r.push_back({ lado, EN_CEMENTERIO, k });
+			return r;
+		};
+		c.pagarCostes = pagarDestierros;
+		c.valor = [](const Duelo&, int, const std::vector<Lugar>&) { return 1100.0f; };
+		c.disparo = D_DESTRUYE_BATALLA;
+		c.resolver = [](Duelo& d, Eslabon& e) {
+			if (e.paso == 0) {
+				e.paso = 1;
+				std::vector<Lugar> cands;
+				for (int z = 0; z < ZONAS; z++)
+					if (!d.l[(size_t)(1 - e.lado)].mt[(size_t)z].vacia()) cands.push_back({ 1 - e.lado, EN_MT, z });
+				if (!d.l[(size_t)(1 - e.lado)].campo.vacia()) cands.push_back({ 1 - e.lado, EN_CAMPO, ZONA_CAMPO });
+				if (cands.empty() || preguntar(d, e, e.lado, "ef.elegir.destruir", cands, 1, true)) return;
+			}
+			for (const Lugar& g : e.elegidos) destruir(d, g);
+		};
+	}
+	// por reglas del motor: Obnoxious Celtic Guard (motorSinDestruirBatallaY) y Drillroid (motorAntesCalculo)
+	for (const char* id : { "obnoxious_celtic_guard", "drillroid" }) def(id);
+}
+
 inline TablaCartas& tablaCartas()
 {
 	static TablaCartas t = [] {
@@ -27114,6 +27547,7 @@ inline TablaCartas& tablaCartas()
 		cartasMotor2Parciales2(r);
 		necrofearM2(r);
 		cartasMotor2Extras(r);
+		cartasTorneoExtras(r);   // (rama classic-torneo-extras)
 		{   // (Batteryman AA: cada fuente suma 1000 a cada Batteryman de su lado)
 			DefCarta& b = r["batteryman_aa"];
 			b.modAtk = [](const Duelo& d, int lf, const MagiaTrampa* mt, int lado, int z) {

@@ -852,6 +852,31 @@ Sentinel of the Seas: carta firma de Mako (variante Oceano, con Amphibious Bugro
 viejo de su texto ("Defender of the Sea", NOMBRE_VIEJO) y personajes_gen.py arma la receta
 F|amphibious_bugroth|ground_attacker_bugroth+sentinel_of_the_seas con Polymerization en el mazo.
 
+### Mazos de torneo: las 10 cartas que faltaban (rama classic-torneo-extras)
+Cartas extra (`datos/cartas_extra.txt`) para que las listas de torneo sean exactas; su codigo esta en
+`cartasTorneoExtras` (ia.h) y sus casos en `prueba_efectos.cpp` (`tandaTorneoExtras`):
+- **Command Knight**: tus Guerreros +400 ATK (`modAtk`); con otro monstruo tuyo no se le ataca (`motorAtacable`); si
+  solo hay Command Knights, ninguno se ataca y el ataque es directo (`motorAtaqueDirecto`).
+- **Cyber Dragon**: procedimiento desde la mano si solo el rival controla monstruos.
+- **Foolish Burial**: un monstruo del mazo al cementerio (la IA prefiere los Sirvientes y los que sirven alli).
+- **Goblin Zombie**: danno de batalla al rival -> la de arriba de su mazo al cementerio (`motorDannoBatalla`, efecto 3);
+  del campo al cementerio -> un Zombi de 1200 DEF o menos del mazo a la mano.
+- **Il Blud** y la **regla Geminis** (subtipo `geminis` en cartas_classic.txt): boca arriba es normal; J_ACTIVAR sobre
+  el (sin cadena) gasta la invocacion normal del turno, lo marca `Monstruo::geminado` y abre la ventana de invocacion
+  normal (Torrential Tribute, Bottomless...); boca abajo vuelve a ser normal (`motorRecalcular`). Su efecto (1 vez por
+  turno): un Zombi de la mano o de cualquier cementerio (Necrovalley lo impide); si Il Blud deja el campo, se destruyen
+  (`EstadoEfectos::ilBlud`, `motorSaleMonstruo`). El jugador ve "Invocacion normal (Geminis)" en el menu de la carta.
+- **Magical Mallet**: pregunta opcional una a una (No: terminar); las elegidas al mazo, baraja y roba las mismas.
+- **Izanagi**: procedimiento desterrando un Spirit de la mano (coste de la mano: `activarCarta` vuelve a buscar la carta
+  por si cambio su indice). En la fase final, cada Spirit que deberia volver pregunta a su controlador (disparo
+  `EF_IZANAGI`); la IA lo deja.
+- **Yamato-no-Kami** (Spirit, N en rivales.txt): procedimiento desterrando un Spirit del cementerio; vuelve a la mano en
+  la fase final del turno en que se invoca (`vuelveFinTurno` al invocarse por su procedimiento); si destruye en batalla
+  (atacando), puedes destruir 1 magia/trampa del rival.
+- **Obnoxious Celtic Guard**: no lo destruye en batalla uno de 1900 ATK o mas (`motorSinDestruirBatallaY`).
+- **Drillroid**: atacando a uno en defensa (tambien el volteado por el ataque), lo destruye antes del calculo
+  (`motorAntesCalculo`; los efectos de volteo se disparan igual).
+
 ## Atajos mas visibles para el jugador (propuesta de orden para quitarlos)
 
 1. **[HECHO en la tanda AM] Cartas que "adivinan" con informacion oculta** (se nota y es injusto): Mind Crush y D.D. Designator siempre aciertan

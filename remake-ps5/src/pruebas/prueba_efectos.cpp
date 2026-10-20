@@ -13638,6 +13638,256 @@ static void tandaControlFinal()
 		fin();
 	}
 }
+// rama classic-torneo-extras: las 10 cartas extra de los mazos de torneo (Command Knight, Cyber Dragon, Foolish Burial,
+// Goblin Zombie, Il Blud (Geminis), Magical Mallet, Izanagi, Yamato-no-Kami, Obnoxious Celtic Guard, Drillroid)
+// contesta las preguntas pendientes: la de Izanagi con "si" o "no"; las demas, pasar o el primero
+static void contestarIzanagi(Escena& e, bool volver)
+{
+	for (int g = 0; g < 30 && e.d.ef.preg.tipo != P_NADA; g++) {
+		if (e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.texto == "ef.elegir.izanagi") {
+			if (volver) e.elige(e.d.ef.preg.lado, 0);
+			else e.noElige(e.d.ef.preg.lado);
+			continue;
+		}
+		Jugada j;
+		j.tipo = e.d.ef.preg.tipo == P_ELEGIR ? J_ELEGIR : J_PASAR;
+		j.objetivo = 0;
+		e.d.aplicar(j);
+	}
+}
+static void tandaTorneoExtras()
+{
+	fprintf(stderr, "tanda torneo-extras: las cartas que faltaban en los mazos de torneo\n");
+	{
+		caso("Command Knight: tus Guerreros +400 ATK (los del rival no); con otro monstruo no se le ataca; dos solos: ataque directo",
+		     "command_knight");
+		Escena e;
+		const int ck = e.mon(0, "command_knight");
+		const int cg = e.mon(0, "celtic_guardian");
+		const int ro = e.mon(1, "celtic_guardian");
+		VERIFICA(e.d.l[0].m[(size_t)ck].atkEf == 1600 && e.d.l[0].m[(size_t)cg].atkEf == 1800 && e.d.l[1].m[(size_t)ro].atkEf == 1400,
+		         "ATK %d / %d / rival %d", e.d.l[0].m[(size_t)ck].atkEf, e.d.l[0].m[(size_t)cg].atkEf, e.d.l[1].m[(size_t)ro].atkEf);
+		Escena f(F_BATALLA);
+		const int a = f.mon(0, "summoned_skull");
+		const int k1 = f.mon(1, "command_knight");
+		const int o1 = f.mon(1, "mystical_elf", true);
+		VERIFICA(!atacar(f, a, k1), "ataco a Command Knight con otro monstruo a su lado");
+		VERIFICA(!atacar(f, a, -1), "ataque directo con un monstruo atacable");
+		VERIFICA(atacar(f, a, o1), "no ataco al otro");
+		f.pasarTodo();
+		Escena g(F_BATALLA);
+		const int b = g.mon(0, "summoned_skull");
+		g.mon(1, "command_knight");
+		g.mon(1, "command_knight");
+		VERIFICA(atacar(g, b, -1), "con dos Command Knight solos no hubo ataque directo");
+		g.pasarTodo();
+		VERIFICA(g.d.l[1].lp == LP_INICIAL - 2500, "LP rival %d", g.d.l[1].lp);
+		Escena h(F_BATALLA);
+		const int c = h.mon(0, "summoned_skull");
+		const int k3 = h.mon(1, "command_knight");
+		VERIFICA(atacar(h, c, k3), "solo, Command Knight no se pudo atacar");
+		fin();
+	}
+	{
+		caso("Cyber Dragon: invocacion especial desde la mano si solo el rival controla monstruos", "cyber_dragon");
+		Escena e;
+		e.mon(1, "battle_ox");
+		VERIFICA(e.activar(0, H(0, e.mano(0, "cyber_dragon"))) && buscarZona(e, 0, "cyber_dragon") >= 0, "no se invoco");
+		Escena f;
+		f.mon(1, "battle_ox");
+		f.mon(0, "kuriboh");
+		VERIFICA(!f.activar(0, H(0, f.mano(0, "cyber_dragon"))), "se invoco controlando un monstruo");
+		Escena g;
+		VERIFICA(!g.activar(0, H(0, g.mano(0, "cyber_dragon"))), "se invoco sin monstruos del rival");
+		fin();
+	}
+	{
+		caso("Foolish Burial: el monstruo elegido de tu mazo va al cementerio", "foolish_burial");
+		Escena e;
+		e.d.l[0].mazo.push_back("skull_servant");
+		const size_t mazo = e.d.l[0].mazo.size();
+		VERIFICA(e.activar(0, H(0, e.mano(0, "foolish_burial"))), "no se activo");
+		e.pasa(1);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.texto == "ef.elegir.cementerio", "no pregunto");
+		VERIFICA(e.elige(0, indiceCand(e, "skull_servant")), "eleccion");
+		e.pasarTodo();
+		VERIFICA(e.enCementerio(0, "skull_servant") == 1 && e.d.l[0].mazo.size() == mazo - 1, "no lo mando (mazo %d)", (int)e.d.l[0].mazo.size());
+		fin();
+	}
+	{
+		caso("Goblin Zombie: danno de batalla -> la de arriba del mazo rival al cementerio; destruido -> busca un Zombi de 1200 DEF o menos",
+		     "goblin_zombie");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "goblin_zombie");
+		const size_t mazo = e.d.l[1].mazo.size(), cem = e.d.l[1].cementerio.size();
+		VERIFICA(atacar(e, a, -1), "no ataco");
+		e.pasarTodo();
+		resolverDisparos(e);
+		VERIFICA(e.d.l[1].lp == LP_INICIAL - 1100 && e.d.l[1].mazo.size() == mazo - 1 && e.d.l[1].cementerio.size() == cem + 1,
+		         "LP %d mazo %d cementerio %d", e.d.l[1].lp, (int)e.d.l[1].mazo.size(), (int)e.d.l[1].cementerio.size());
+		Escena f;
+		f.mon(1, "goblin_zombie");
+		f.d.l[1].mazo.push_back("spirit_reaper");
+		f.d.l[1].mazo.push_back("vampire_lord");   // (DEF 1500: no vale)
+		VERIFICA(f.activar(0, H(0, f.mano(0, "raigeki"))), "Raigeki no se activo");
+		f.pasarTodo();
+		VERIFICA(enMano(f, 1, "spirit_reaper") && !enMano(f, 1, "vampire_lord"), "no busco el Zombi de 1200 DEF o menos");
+		fin();
+	}
+	{
+		caso("Il Blud (Geminis): invocado de nuevo gana su efecto: un Zombi de la mano o cualquier cementerio; si se va, se destruye",
+		     "il_blud");
+		Escena e;
+		const int z = e.mon(0, "il_blud");
+		e.d.l[1].cementerio.push_back("vampire_lord");
+		VERIFICA(!geminisActivo(e.d.l[0].m[(size_t)z]), "ya era de efecto");
+		VERIFICA(motivoNoActivar(e.d, 0, M(0, z), false).empty(), "no se podia invocar de nuevo: %s", motivoNoActivar(e.d, 0, M(0, z), false).c_str());
+		VERIFICA(e.d.aplicar(jugadaActivar(M(0, z))), "no se invoco de nuevo");
+		e.pasarTodo();
+		VERIFICA(geminisActivo(e.d.l[0].m[(size_t)z]) && e.d.l[0].invocoNormal, "no quedo como monstruo de efecto o no gasto la normal");
+		VERIFICA(e.d.aplicar(jugadaActivar(M(0, z))), "el efecto no se activo");
+		e.pasarTodo();
+		const int v = buscarZona(e, 0, "vampire_lord");
+		VERIFICA(v >= 0 && e.d.l[0].m[(size_t)v].duenno == 1, "no invoco al Zombi del cementerio rival");
+		VERIFICA(!e.d.aplicar(jugadaActivar(M(0, z))), "efecto dos veces en el turno");
+		e.d.alCementerio(0, z);
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "vampire_lord") < 0 && e.enCementerio(1, "vampire_lord") == 1, "el Zombi no se destruyo al irse Il Blud");
+		Escena f;   // (con la invocacion normal ya usada no se puede; boca abajo vuelve a ser normal)
+		const int y = f.mon(0, "il_blud");
+		f.d.l[0].invocoNormal = true;
+		VERIFICA(motivoNoActivar(f.d, 0, M(0, y), false) == "ef.ya_invoco", "se invoco dos veces en el turno");
+		f.d.l[0].m[(size_t)y].geminado = true;
+		f.d.l[0].m[(size_t)y].bocaAbajo = true;
+		f.d.recalcular();
+		VERIFICA(!f.d.l[0].m[(size_t)y].geminado, "boca abajo siguio de efecto");
+		fin();
+	}
+	{
+		caso("Magical Mallet: las cartas elegidas de la mano al mazo, baraja y roba las mismas", "magical_mallet");
+		Escena e;
+		const int k = e.mano(0, "magical_mallet");
+		e.mano(0, "kuriboh");
+		e.mano(0, "dark_hole");
+		e.mano(0, "summoned_skull");
+		const size_t mazo = e.d.l[0].mazo.size();
+		VERIFICA(e.activar(0, H(0, k)), "no se activo");
+		e.pasa(1);
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.preg.opcional && e.d.ef.preg.texto == "ef.elegir.barajar", "no pregunto");
+		VERIFICA(e.elige(0, indiceCand(e, "kuriboh")), "eleccion 1");
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.elige(0, indiceCand(e, "dark_hole")), "eleccion 2");
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.noElige(0), "no pregunto por una tercera");
+		e.pasarTodo();
+		VERIFICA(e.d.l[0].mano.size() == 3 && enMano(e, 0, "summoned_skull") && e.d.l[0].mazo.size() == mazo, "mano %d mazo %d",
+		         (int)e.d.l[0].mano.size(), (int)e.d.l[0].mazo.size());
+		int devueltas = 0;
+		for (const std::string& id : e.d.l[0].mazo) devueltas += id == "kuriboh" || id == "dark_hole";
+		VERIFICA(devueltas + (int)enMano(e, 0, "kuriboh") + (int)enMano(e, 0, "dark_hole") == 2, "las elegidas no fueron al mazo");
+		fin();
+	}
+	{
+		caso("Izanagi: invocacion especial desterrando un Spirit de la mano; tus Spirit vuelven a la mano solo si quieres", "izanagi");
+		Escena e;
+		e.mano(0, "kuriboh");
+		const int k = e.mano(0, "izanagi");
+		e.mano(0, "tsukuyomi");
+		VERIFICA(e.activar(0, H(0, k)), "no se invoco");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 0, "izanagi") >= 0 && e.d.l[0].desterrados.size() == 1 && e.d.l[0].desterrados[0] == "tsukuyomi" && enMano(e, 0, "kuriboh"),
+		         "no se invoco desterrando el Spirit");
+		Escena s;
+		VERIFICA(!s.activar(0, H(0, s.mano(0, "izanagi"))), "se invoco sin Spirit en la mano");
+		for (int volver = 0; volver < 2; volver++) {
+			Escena f;
+			f.mon(0, "izanagi");
+			f.mon(1, "battle_ox");
+			const int t = f.mano(0, "tsukuyomi");
+			VERIFICA(invocar(f, t), "Tsukuyomi no se invoco");
+			f.pasa(1);
+			if (f.d.ef.preg.tipo == P_ELEGIR) f.elige(0, indiceCand(f, "battle_ox"));   // (Tsukuyomi voltea al del rival, no a Izanagi)
+			f.pasarTodo();
+			Jugada fase;
+			fase.tipo = J_FASE;
+			for (int g = 0; g < 4 && f.d.activo == 0; g++) {
+				f.d.aplicar(fase);
+				contestarIzanagi(f, volver == 1);
+			}
+			VERIFICA(volver ? enMano(f, 0, "tsukuyomi") : buscarZona(f, 0, "tsukuyomi") >= 0, "%s: el Spirit %s", volver ? "si" : "no",
+			         volver ? "no volvio" : "volvio a la mano");
+		}
+		fin();
+	}
+	{
+		caso("Yamato-no-Kami: no se invoca normal; desterrando un Spirit del cementerio; destruye en batalla: una magia/trampa; vuelve",
+		     "yamato_no_kami");
+		Escena e;
+		e.d.l[0].cementerio = { "tsukuyomi" };
+		const int k = e.mano(0, "yamato_no_kami");
+		VERIFICA(!invocar(e, k), "se invoco de forma normal");
+		VERIFICA(e.activar(0, H(0, k)), "no se invoco por su procedimiento");
+		e.pasarTodo();
+		const int z = buscarZona(e, 0, "yamato_no_kami");
+		VERIFICA(z >= 0 && e.d.l[0].desterrados.size() == 1 && e.d.l[0].cementerio.empty(), "no desterro al Spirit");
+		Jugada fase;
+		fase.tipo = J_FASE;
+		for (int g = 0; g < 4 && e.d.activo == 0; g++) {
+			e.d.aplicar(fase);
+			e.pasarTodo();
+		}
+		VERIFICA(enMano(e, 0, "yamato_no_kami"), "no volvio a la mano en la fase final");
+		Escena f(F_BATALLA);
+		const int a = f.mon(0, "yamato_no_kami");
+		const int o = f.mon(1, "celtic_guardian");
+		f.colocar(1, "raigeki");
+		VERIFICA(atacar(f, a, o), "no ataco");
+		f.pasarTodo();
+		resolverDisparos(f);
+		VERIFICA(f.d.l[1].monstruos() == 0 && f.d.l[1].colocadasMT() == 0 && f.enCementerio(1, "raigeki") == 1, "no destruyo la magia/trampa");
+		Escena g;
+		VERIFICA(!g.activar(0, H(0, g.mano(0, "yamato_no_kami"))), "se invoco sin Spirit en el cementerio");
+		fin();
+	}
+	{
+		caso("Obnoxious Celtic Guard: no lo destruye en batalla un monstruo de 1900 ATK o mas", "obnoxious_celtic_guard");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "summoned_skull");
+		const int o = e.mon(1, "obnoxious_celtic_guard");
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 1, "obnoxious_celtic_guard") >= 0 && e.d.l[1].lp == LP_INICIAL - 1100, "se destruyo (LP %d)", e.d.l[1].lp);
+		Escena f(F_BATALLA);
+		const int b = f.mon(0, "dark_magician_girl");   // (2000 ATK: tambien)
+		const int p = f.mon(1, "obnoxious_celtic_guard");
+		VERIFICA(atacar(f, b, p), "no ataco");
+		f.pasarTodo();
+		VERIFICA(buscarZona(f, 1, "obnoxious_celtic_guard") >= 0, "un 2000 ATK lo destruyo");
+		Escena g(F_BATALLA);
+		const int c = g.mon(0, "battle_ox");   // (1700 ATK: si lo destruye)
+		const int q = g.mon(1, "obnoxious_celtic_guard");
+		VERIFICA(atacar(g, c, q), "no ataco");
+		g.pasarTodo();
+		VERIFICA(buscarZona(g, 1, "obnoxious_celtic_guard") < 0, "un 1700 ATK no lo destruyo");
+		fin();
+	}
+	{
+		caso("Drillroid: ataca a uno en defensa (tambien boca abajo): lo destruye antes del calculo", "drillroid");
+		Escena e(F_BATALLA);
+		const int a = e.mon(0, "drillroid");
+		const int o = e.mon(1, "big_shield_gardna", true, true);
+		VERIFICA(atacar(e, a, o), "no ataco");
+		e.pasarTodo();
+		VERIFICA(buscarZona(e, 1, "big_shield_gardna") < 0 && e.d.l[0].lp == LP_INICIAL && buscarZona(e, 0, "drillroid") >= 0, "no lo destruyo (LP %d)",
+		         e.d.l[0].lp);
+		Escena f(F_BATALLA);
+		const int b = f.mon(0, "drillroid");
+		const int p = f.mon(1, "summoned_skull");
+		VERIFICA(atacar(f, b, p), "no ataco");
+		f.pasarTodo();
+		VERIFICA(buscarZona(f, 1, "summoned_skull") >= 0 && buscarZona(f, 0, "drillroid") < 0, "contra uno en ataque no es un calculo normal");
+		fin();
+	}
+}
+
 int main(int argc, char** argv)
 {
 	if (argc < 2 || !base.leerCartas(argv[1])) {
@@ -13709,6 +13959,7 @@ int main(int argc, char** argv)
 	tandaMotor2Extras();
 	tandaElecciones();   // (rama classic-elecciones)
 	tandaControlFinal();   // (control final: las que la certificacion dejaba sin prueba)
+	tandaTorneoExtras();   // (rama classic-torneo-extras)
 	iaUsa();
 	// el contador: cartas con efecto en el motor y cuantas tienen caso propio
 	int conCaso = 0;

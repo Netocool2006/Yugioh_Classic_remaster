@@ -67,9 +67,10 @@ SUB_MAGIA = {"Normal": ("normal", ""), "Field": ("campo", "de Campo"), "Equip": 
              "Continuous": ("continua", "Continua"), "Quick-Play": ("rapida", "Rápida"), "Ritual": ("ritual", "de Ritual")}
 SUB_TRAMPA = {"Normal": ("normal", ""), "Continuous": ("continua", "Continua"), "Counter": ("contraataque", "de Contraataque")}
 SUB_MONSTRUO = {"Flip Effect Monster": ("volteo", "Volteo"), "Spirit Monster": ("espiritu", "Espíritu"),
-                "Union Effect Monster": ("union", "Unión"), "Toon Monster": ("toon", "Toon")}
+                "Union Effect Monster": ("union", "Unión"), "Toon Monster": ("toon", "Toon"),
+                "Gemini Monster": ("geminis", "Géminis")}
 
-SUB_EN = {"volteo": "Flip", "espiritu": "Spirit", "union": "Union", "toon": "Toon", "magia_campo": "Field",
+SUB_EN = {"volteo": "Flip", "geminis": "Gemini", "espiritu": "Spirit", "union": "Union", "toon": "Toon", "magia_campo": "Field",
           "magia_equipo": "Equip", "magia_continua": "Continuous", "magia_rapida": "Quick-Play", "magia_ritual": "Ritual",
           "trampa_continua": "Continuous", "trampa_contraataque": "Counter"}
 ES = {"ritual": " / Ritual", "fusion": " / Fusión", "efecto": " / Efecto",

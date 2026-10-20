@@ -928,4 +928,246 @@ inline void mazos(const std::string& ui)
 	cu::caso("CU-BE-MAZO-BANLIST", pot && pot->limiteBase == 1, "Pot of Greed no es limitada");
 }
 
+// ------------------------------------------------------------------------------------------------- mazos de torneo
+// (rama classic-mazos-torneo; datos/mazos_torneo.txt). La prueba larga (legalidad de cada mazo, duelos y % contra los
+// tematicos de nivel 8) es prueba_torneo.cpp; aqui, lo que ve el juego con la base cargada como en el juego
+inline void torneo(const Base& base)
+{
+	cu::caso("CU-BE-TORNEO-JUEGO-CARGA", base.torneos.size() >= 21, "el juego cargo %d mazos de torneo (se esperan 21)", (int)base.torneos.size());
+	const Rival* yami = base.rival("yami_yugi");
+	const Rival* kaiba = base.rival("kaiba");
+	const Rival* cabra = base.rival("cabra");
+	cu::caso("CU-BE-TORNEO-JUEGO-CARGA", yami && kaiba && cabra && !yami->torneo.empty() && !kaiba->torneo.empty() && !cabra->torneo.empty(),
+	         "Yami Yugi, Kaiba o Cabra sin mazo de torneo");
+	int bajos = 0;
+	for (const Rival& r : base.rivales)
+		if ((r.personaje ? r.nivel < 5 : r.nivel < 7) && !r.torneo.empty() && r.clave != "joey") bajos++;   // (Joey: rama classic-torneo-extras)
+	cu::caso("CU-BE-TORNEO-NIVEL-BAJO", bajos == 0, "%d rivales de nivel bajo con mazo de torneo", bajos);
+	int salenBajos = 0;
+	for (const Rival& r : base.rivales)
+		if (r.nivel <= 4 && r.clave != "joey")
+			for (uint32_t s = 1; s <= 20; s++) salenBajos += prepararRival(base, r, s * 2654435761u, nullptr).torneo >= 0;
+	cu::caso("CU-BE-TORNEO-NIVEL-BAJO", salenBajos == 0, "a un rival de nivel 1-4 le salio un mazo de torneo %d veces", salenBajos);
+	if (!cabra) return;
+
+	// sale tal cual y se puede jugar (40 cartas entre mano y mazo, su extra)
+	MazoRival m;
+	uint32_t sem = 0;
+	for (uint32_t s = 1; s <= 400 && m.torneo < 0; s++) m = prepararRival(base, *cabra, s * 7919u, nullptr), sem = s * 7919u;
+	cu::caso("CU-BE-TORNEO-TAL-CUAL", m.torneo >= 0, "Cabra nunca saco un mazo de torneo en 400 duelos");
+	if (m.torneo < 0) return;
+	const MazoTorneo& t = base.torneos[(size_t)m.torneo];
+	cu::caso("CU-BE-TORNEO-TAL-CUAL", m.principal == t.principal && m.fusion == t.fusion, "el mazo %s no salio tal cual", t.clave.c_str());
+	cu::caso("CU-BE-TORNEO-TAL-CUAL", m.plan >= 0, "el mazo de torneo %s salio sin plan", t.clave.c_str());
+	const Rival* rodrigo = base.rival("rodrigo");
+	if (rodrigo) {
+		Duelo d(&base);
+		const MazoRival otro = base.mazoDe(*rodrigo, 5);
+		d.empezar(otro.principal, otro.fusion, m.principal, m.fusion, sem);
+		cu::caso("CU-BE-TORNEO-TAL-CUAL", d.l[1].mazo.size() + d.l[1].mano.size() == 40 && d.l[1].extra.size() == t.fusion.size(),
+		         "el duelo no empezo con el mazo de torneo (%d en mazo+mano, %d en el extra)", (int)(d.l[1].mazo.size() + d.l[1].mano.size()),
+		         (int)d.l[1].extra.size());
+	}
+	// no se repite el mismo dos duelos seguidos (la memoria guarda el ultimo mazo)
+	Memoria mem;
+	mem.rivales[cabra->clave].mazo = m.principal;
+	cu::caso("CU-BE-TORNEO-NO-REPITE", prepararRival(base, *cabra, sem, &mem).torneo != m.torneo, "%s salio dos duelos seguidos", t.clave.c_str());
+
+	// Goat Control: Metamorphosis sobre un nivel 1 trae a Thousand-Eyes Restrict del extra
+	{
+		Mesa x(&base);
+		x.d.l[0].extra = { "thousand_eyes_restrict" };
+		const int z = x.mon(0, "magician_of_faith");
+		const int k = x.mano(0, "metamorphosis");
+		const bool ok = z >= 0 && x.activar(0, H(0, k), { M(0, z) });
+		x.pasarTodo();
+		cu::caso("CU-BE-TORNEO-METAMORFOSIS", ok && x.zonaDe(0, "thousand_eyes_restrict") >= 0 && x.enCementerio(0, "magician_of_faith") == 1,
+		         "Metamorphosis no trajo a Thousand-Eyes Restrict (activo %d)", ok ? 1 : 0);
+	}
+	// Exodia: la IA no invoca ni descarta las piezas mientras junta las 5
+	{
+		Mesa x(&base);
+		x.d.l[0].mazo = { "left_leg_of_the_forbidden_one", "right_leg_of_the_forbidden_one", "jar_of_greed", "upstart_goblin", "reload", "scapegoat",
+		                  "waboku", "gravity_bind" };
+		for (const char* id : { "exodia_the_forbidden_one", "left_arm_of_the_forbidden_one", "right_arm_of_the_forbidden_one", "scapegoat", "waboku",
+		                        "messenger_of_peace", "upstart_goblin" })
+			x.mano(0, id);
+		Cerebro c(personalidadPorClave("calculador"), 8, 77);
+		c.usarPlan(PL_ALTERNATIVA, Lectura{}, 0, 1);
+		std::vector<Jugada> cands;
+		c.candidatos(x.d, cands);
+		float invocar = -1e9f, pasar = 0.0f;
+		for (const Jugada& j : cands) {
+			if ((j.tipo == J_INVOCAR || j.tipo == J_COLOCAR) && piezaExodia(j.carta)) invocar = std::max(invocar, j.puntos);
+			if (j.tipo == J_FASE) pasar = j.puntos;
+		}
+		cu::caso("CU-BE-TORNEO-EXODIA-IA", invocar < pasar, "la IA quiere invocar una pieza de Exodia (%.0f contra pasar %.0f)", invocar, pasar);
+		x.d.fase = F_FINAL;
+		const Jugada dsc = c.decidir(x.d);
+		cu::caso("CU-BE-TORNEO-EXODIA-IA", dsc.tipo == J_DESCARTAR && !piezaExodia(dsc.carta), "la IA descarta %s con la mano llena", dsc.carta.c_str());
+	}
+}
+
+// ------------------------------------------------------------------------------------------------- torneo: extras
+// (rama classic-torneo-extras) las 10 cartas que faltaban (cartas extra con su efecto en el motor), las listas exactas
+// y Joey con Gearfried y Equipos. Los casos largos de cada carta estan en prueba_efectos.cpp (tandaTorneoExtras)
+inline void torneoExtras(const Base& base)
+{
+	// las listas usan las cartas exactas (no los sustitutos)
+	{
+		auto tiene = [&](const char* clave, const char* id) {
+			for (const MazoTorneo& t : base.torneos)
+				if (t.clave == clave) return std::find(t.principal.begin(), t.principal.end(), id) != t.principal.end();
+			return false;
+		};
+		struct E { const char* mazo; const char* carta; };
+		static const E ESPERADAS[] = { { "md_sirvientes", "foolish_burial" },       { "md_guerreros_unidos", "command_knight" },
+			                           { "md_guerreros_unidos", "obnoxious_celtic_guard" }, { "guerreros_toolbox", "command_knight" },
+			                           { "guerreros_toolbox", "obnoxious_celtic_guard" }, { "zombis", "goblin_zombie" },
+			                           { "zombis", "il_blud" },                    { "gearfried_equipo", "command_knight" },
+			                           { "maquinas", "cyber_dragon" },             { "maquinas", "drillroid" },
+			                           { "espiritus", "izanagi" },                 { "espiritus", "yamato_no_kami" },
+			                           { "exodia_biblioteca", "magical_mallet" } };
+		int faltan = 0;
+		std::string cuales;
+		for (const E& e : ESPERADAS)
+			if (!tiene(e.mazo, e.carta)) faltan++, cuales += std::string(" ") + e.mazo + ":" + e.carta;
+		cu::caso("CU-BE-TORNEO-EXACTAS", faltan == 0, "%d cartas exactas que faltan en las listas:%s", faltan, cuales.c_str());
+		const bool sust = tiene("zombis", "double_coston") || tiene("maquinas", "drillago") || tiene("md_guerreros_unidos", "d_d_survivor") ||
+		                  tiene("guerreros_toolbox", "blindly_loyal_goblin");
+		cu::caso("CU-BE-TORNEO-EXACTAS", !sust, "una lista sigue con un sustituto (Double Coston, Drillago, D.D. Survivor o Blindly Loyal Goblin)");
+		int sinCarta = 0;
+		for (const char* id : { "command_knight", "cyber_dragon", "foolish_burial", "goblin_zombie", "il_blud", "magical_mallet", "izanagi", "yamato_no_kami",
+		                        "obnoxious_celtic_guard", "drillroid" })
+			sinCarta += base.carta(id) == nullptr || defCarta(id) == nullptr;
+		cu::caso("CU-BE-TORNEO-EXACTAS", sinCarta == 0, "%d de las 10 cartas extra sin datos o sin efecto en el motor", sinCarta);
+		const Carta* fb = base.carta("foolish_burial");
+		cu::caso("CU-BE-TORNEO-EXACTAS", fb && fb->limite == 1, "Foolish Burial deberia ser limitada (1)");
+	}
+	// Joey (nivel 4) lleva Gearfried y Equipos (decision del usuario) y le sale tal cual
+	{
+		const Rival* joey = base.rival("joey");
+		int k = -1;
+		for (size_t i = 0; i < base.torneos.size(); i++)
+			if (base.torneos[i].clave == "gearfried_equipo") k = (int)i;
+		const bool asignado = joey && k >= 0 && std::find(joey->torneo.begin(), joey->torneo.end(), k) != joey->torneo.end();
+		cu::caso("CU-BE-TORNEO-JOEY", asignado, "Joey no tiene el mazo de torneo Gearfried y Equipos");
+		if (asignado) {
+			int sale = 0, talCual = 0;
+			for (uint32_t s = 1; s <= 60; s++) {
+				const MazoRival m = prepararRival(base, *joey, s * 7919u, nullptr);
+				if (m.torneo != k) continue;
+				sale++;
+				talCual += m.principal == base.torneos[(size_t)k].principal;
+			}
+			cu::caso("CU-BE-TORNEO-JOEY", sale > 0 && talCual == sale, "en 60 duelos a Joey le salio %d veces (tal cual %d)", sale, talCual);
+		}
+	}
+	// Command Knight: +400 a tus Guerreros; con otro monstruo no se le ataca
+	{
+		Mesa x(&base, F_BATALLA);
+		const int a = x.mon(0, "summoned_skull");
+		const int ck = x.mon(1, "command_knight");
+		x.mon(1, "celtic_guardian");
+		const bool bloqueado = !x.jugar(J_ATACAR, -1, a, {}, ck);
+		cu::caso("CU-BE-EXTRA-COMMAND-KNIGHT", x.d.l[1].m[(size_t)ck].atkEf == 1600 && bloqueado, "ATK %d, se le pudo atacar %d", x.d.l[1].m[(size_t)ck].atkEf, bloqueado ? 0 : 1);
+	}
+	// Cyber Dragon: desde la mano si solo el rival controla monstruos
+	{
+		Mesa x(&base);
+		x.mon(1, "battle_ox");
+		const bool ok = x.activar(0, H(0, x.mano(0, "cyber_dragon")));
+		x.pasarTodo();
+		cu::caso("CU-BE-EXTRA-CYBER-DRAGON", ok && x.zonaDe(0, "cyber_dragon") >= 0, "Cyber Dragon no se invoco de forma especial");
+	}
+	// Foolish Burial: un monstruo del mazo al cementerio
+	{
+		Mesa x(&base);
+		x.d.l[0].mazo = { "skull_servant" };
+		const bool ok = x.activar(0, H(0, x.mano(0, "foolish_burial")));
+		x.pasarTodo();
+		cu::caso("CU-BE-EXTRA-FOOLISH-BURIAL", ok && x.enCementerio(0, "skull_servant") == 1 && x.d.l[0].mazo.empty(), "no mando el monstruo del mazo al cementerio");
+	}
+	// Goblin Zombie: destruido, busca un Zombi de 1200 DEF o menos
+	{
+		Mesa x(&base);
+		x.mon(1, "goblin_zombie");
+		x.d.l[1].mazo = { "spirit_reaper", "vampire_lord" };
+		const bool ok = x.activar(0, H(0, x.mano(0, "raigeki")));
+		x.pasarTodo();
+		cu::caso("CU-BE-EXTRA-GOBLIN-ZOMBIE", ok && x.enMano(1, "spirit_reaper") && !x.enMano(1, "vampire_lord"), "no busco el Zombi de 1200 DEF o menos");
+	}
+	// Il Blud: la regla Geminis (invocarlo de nuevo gasta la invocacion normal) y su efecto
+	{
+		Mesa x(&base);
+		const int z = x.mon(0, "il_blud");
+		x.d.l[0].cementerio = { "vampire_lord" };
+		const bool antes = motivoNoActivar(x.d, 0, M(0, z), false).empty() && !geminisActivo(x.d.l[0].m[(size_t)z]);
+		const bool gem = x.d.aplicar(jugadaActivar(M(0, z)));
+		x.pasarTodo();
+		cu::caso("CU-BE-GEMINIS-REGLA", antes && gem && geminisActivo(x.d.l[0].m[(size_t)z]) && x.d.l[0].invocoNormal,
+		         "la invocacion de Geminis no funciono o no gasto la normal del turno");
+		const bool ef = x.d.aplicar(jugadaActivar(M(0, z)));
+		x.pasarTodo();
+		const int v = x.zonaDe(0, "vampire_lord");
+		x.d.alCementerio(0, z);
+		x.pasarTodo();
+		cu::caso("CU-BE-EXTRA-IL-BLUD", ef && v >= 0 && x.zonaDe(0, "vampire_lord") < 0, "Il Blud no invoco al Zombi o no se destruyo al irse");
+	}
+	// Magical Mallet: elegir cartas de la mano (opcional, una a una), al mazo y robar las mismas
+	{
+		Mesa x(&base);
+		const int k = x.mano(0, "magical_mallet");
+		x.mano(0, "kuriboh");
+		x.mano(0, "dark_hole");
+		const bool ok = x.activar(0, H(0, k));
+		pasarRival(x);
+		const bool pregunta = x.d.ef.preg.tipo == P_ELEGIR && x.d.ef.preg.opcional;
+		x.pasarTodo1();   // (elige la primera)
+		Jugada no;
+		no.tipo = J_PASAR;
+		x.d.aplicar(no);   // (ya no mas)
+		x.pasarTodo();
+		cu::caso("CU-BE-EXTRA-MAGICAL-MALLET", ok && pregunta && x.d.l[0].mano.size() == 2 && x.d.l[0].mazo.size() == 20, "mano %d mazo %d",
+		         (int)x.d.l[0].mano.size(), (int)x.d.l[0].mazo.size());
+	}
+	// Izanagi: desde la mano desterrando un Spirit de la mano
+	{
+		Mesa x(&base);
+		const int k = x.mano(0, "izanagi");
+		x.mano(0, "tsukuyomi");
+		const bool ok = x.activar(0, H(0, k));
+		x.pasarTodo();
+		cu::caso("CU-BE-EXTRA-IZANAGI", ok && x.zonaDe(0, "izanagi") >= 0 && x.d.l[0].desterrados.size() == 1, "Izanagi no se invoco desterrando el Spirit");
+		cu::caso("CU-BE-EXTRA-IZANAGI", izanagiDe(x.d, 0) >= 0, "con Izanagi en el campo los Spirit no tienen opcion de quedarse");
+	}
+	// Yamato-no-Kami: no se invoca normal; desterrando un Spirit del cementerio; vuelve a la mano al final del turno
+	{
+		Mesa x(&base);
+		x.d.l[0].cementerio = { "asura_priest" };
+		const int k = x.mano(0, "yamato_no_kami");
+		const bool normal = x.jugar(J_INVOCAR, k);
+		const bool ok = x.activar(0, H(0, k));
+		x.pasarTodo();
+		const int z = x.zonaDe(0, "yamato_no_kami");
+		cu::caso("CU-BE-EXTRA-YAMATO", !normal && ok && z >= 0 && x.d.l[0].m[(size_t)z].vuelveFinTurno && x.d.l[0].desterrados.size() == 1,
+		         "Yamato-no-Kami: normal %d, procedimiento %d, vuelve %d", normal ? 1 : 0, ok ? 1 : 0, z >= 0 && x.d.l[0].m[(size_t)z].vuelveFinTurno ? 1 : 0);
+	}
+	// Obnoxious Celtic Guard y Drillroid
+	{
+		Mesa x(&base, F_BATALLA);
+		const int a = x.mon(0, "summoned_skull");
+		const int o = x.mon(1, "obnoxious_celtic_guard");
+		x.jugar(J_ATACAR, -1, a, {}, o);
+		x.pasarTodo();
+		cu::caso("CU-BE-EXTRA-CELTIC-GUARD", x.zonaDe(1, "obnoxious_celtic_guard") >= 0, "un monstruo de 2500 ATK lo destruyo en batalla");
+		Mesa y(&base, F_BATALLA);
+		const int b = y.mon(0, "drillroid");
+		const int p = y.mon(1, "big_shield_gardna", true, true);
+		y.jugar(J_ATACAR, -1, b, {}, p);
+		y.pasarTodo();
+		cu::caso("CU-BE-EXTRA-DRILLROID", y.zonaDe(1, "big_shield_gardna") < 0 && y.d.l[0].lp == LP_INICIAL, "Drillroid no destruyo al de defensa antes del calculo");
+	}
+}
+
 }  // namespace cub

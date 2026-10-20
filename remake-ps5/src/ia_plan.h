@@ -108,7 +108,7 @@ inline int puntajePapel(const Base* b, const std::string& id, int plan)
 	}
 	// combos del plan: sus piezas literales tambien son del plan
 	for (const Combo& c : b->combos)
-		if (planPorClave(c.plan) == plan)
+		if (planPorClave(c.plan) == plan && !c.torneo)
 			for (const std::string& pz : c.piezas)
 				if (pz == id) return s + 2;
 	return s;
@@ -548,7 +548,7 @@ inline MazoRival mazoDinamico(const Base& b, const Rival& r, int plan, uint32_t 
 		}
 		// combos del plan: entran juntos si el pool o el nivel los permite
 		for (const Combo& c : b.combos) {
-			if (planPorClave(c.plan) != plan) continue;
+			if (planPorClave(c.plan) != plan || c.torneo) continue;
 			int lit = 0, hay = 0;
 			for (const std::string& pz : c.piezas) {
 				if (pz[0] == '@' || pz[0] == '%' || pz[0] == '&') continue;
@@ -728,11 +728,55 @@ inline MazoRival mazoDinamico(const Base& b, const Rival& r, int plan, uint32_t 
 
 // todo junto: el plan del duelo (pesos + memoria + lectura + dificultad) y su mazo dinamico. Sin papeles cargados
 // (roles_cartas.txt) vuelve al mazo de siempre (Base::mazoDe) sin plan
+// rama classic-mazos-torneo: probabilidad de que el rival saque uno de sus mazos de torneo (si tiene). Genericos de
+// nivel 7-8: 40 %; personajes: 30 % (40 % desde el nivel 7). Nunca el mismo mazo de torneo dos duelos seguidos
+inline float probTorneo(const Rival& r)
+{
+	if (r.torneo.empty()) return 0.0f;
+	return r.personaje ? (r.nivel >= 7 ? 0.40f : 0.30f) : 0.40f;
+}
+inline bool mismoMazo(std::vector<std::string> a, std::vector<std::string> b)
+{
+	std::sort(a.begin(), a.end());
+	std::sort(b.begin(), b.end());
+	return a == b;
+}
+// el mazo de torneo de este duelo (indice en b.torneos) o -1
+inline int elegirTorneo(const Base& b, const Rival& r, uint32_t semilla, const std::vector<std::string>& ultimo)
+{
+	if (r.torneo.empty()) return -1;
+	Azar a(mezclar(semilla, 0x70E0u));
+	a.siguiente();
+	if (a.uno() >= probTorneo(r)) return -1;
+	std::vector<int> cand;
+	for (int k : r.torneo)
+		if (k >= 0 && k < (int)b.torneos.size() && b.torneos[(size_t)k].principal.size() >= 40 && !mismoMazo(b.torneos[(size_t)k].principal, ultimo))
+			cand.push_back(k);
+	return cand.empty() ? -1 : cand[(size_t)a.hasta((int)cand.size())];
+}
+// el mazo de torneo tal cual (sin reequilibrar ni diluir); el plan: casi siempre el suyo, a veces otro que su mazo
+// permita (el rival sigue siendo impredecible y puede cambiar de plan a mitad de duelo)
+inline MazoRival mazoTorneo(const Base& b, const Rival& r, int k, uint32_t semilla, const std::vector<int>& recientes, const Lectura& lec, float dif)
+{
+	const MazoTorneo& t = b.torneos[(size_t)k];
+	MazoRival m;
+	m.rival = &r;
+	m.torneo = k;
+	m.principal = t.principal;
+	m.fusion = t.fusion;
+	m.variante = 0;
+	if (b.papeles.empty()) return m;
+	Azar a(mezclar(semilla, 0x70E1u));
+	a.siguiente();
+	auto w = pesosPlanes(b, r.clavePersonalidad, t.principal, recientes, lec, dif);
+	const int suyo = planPorClave(t.plan);
+	if (suyo >= 0) w[(size_t)suyo] = (w[(size_t)suyo] + 1.0f) * 6.0f;
+	m.plan = sortearPlan(w, a);
+	return m;
+}
+
 inline MazoRival prepararRival(const Base& b, const Rival& r, uint32_t semilla, const Memoria* mem)
 {
-	if (b.papeles.empty()) return b.mazoDe(r, semilla);
-	Azar a(mezclar(semilla, 0x91A4u));
-	a.siguiente();
 	std::vector<int> recientes;
 	std::vector<std::string> ultimo;
 	Lectura lec;
@@ -743,6 +787,11 @@ inline MazoRival prepararRival(const Base& b, const Rival& r, uint32_t semilla, 
 		lec = mem->jugador;
 		dif = mem->dificultad();
 	}
+	const int t = elegirTorneo(b, r, semilla, ultimo);   // (rama classic-mazos-torneo: tal cual)
+	if (t >= 0) return mazoTorneo(b, r, t, semilla, recientes, lec, dif);
+	if (b.papeles.empty()) return b.mazoDe(r, semilla);
+	Azar a(mezclar(semilla, 0x91A4u));
+	a.siguiente();
 	const int plan = sortearPlan(pesosPlanes(b, r.clavePersonalidad, poolDe(r), recientes, lec, dif), a);
 	return mazoDinamico(b, r, plan, semilla, ultimo, dif);
 }
@@ -845,10 +894,24 @@ inline Proyecto proyecto(const Duelo& d, int yo)
 }
 
 // lo que vale NO gastar esta carta ahora (descartar, pagarla como coste): piezas del proyecto, del plan y de combos
+// rama classic-mazos-torneo: Exodia. Una pieza (y cuantas piezas propias quedan vivas: mano + mazo; las del
+// cementerio o desterradas ya no cuentan). Con 4 o mas vivas el lado juega a juntarlas: no las invoca ni las descarta
+inline bool piezaExodia(const std::string& id) { return id.find("forbidden_one") != std::string::npos; }
+inline int piezasExodiaVivas(const Duelo& d, int yo)
+{
+	const Lado& x = d.l[(size_t)yo];
+	std::vector<std::string> p;
+	for (const auto* v : { &x.mano, &x.mazo })
+		for (const std::string& id : *v)
+			if (piezaExodia(id) && std::find(p.begin(), p.end(), id) == p.end()) p.push_back(id);
+	return (int)p.size();
+}
+
 inline float valorGuardar(const Duelo& d, int yo, const std::string& id, const EstadoPlan& ep)
 {
 	if (!ep.activo()) return 0.0f;
 	float v = 60.0f * (float)puntajePapel(d.base, id, ep.plan);
+	if (piezaExodia(id) && piezasExodiaVivas(d, yo) >= 4) v += 3000.0f;   // (rama classic-mazos-torneo)
 	const Proyecto p = proyecto(d, yo);
 	if (std::find(p.materiales.begin(), p.materiales.end(), id) != p.materiales.end()) v += 400.0f;
 	if (id == p.grande) v += 300.0f;
@@ -917,6 +980,8 @@ inline void ajustarPlan(const Duelo& d, int yo, std::vector<Jugada>& c, const Es
 		case J_INVOCAR:
 		case J_COLOCAR: {
 			const Carta* cc = d.carta(id);
+			// (rama classic-mazos-torneo) Exodia: las piezas se juntan en la mano, no se juegan al campo
+			if (piezaExodia(id) && piezasExodiaVivas(d, yo) >= 4) b -= 2500.0f;
 			// tempo: sacrificar el monstruo prestado (Change of Heart + sacrificio)
 			if (ep.plan == PL_TEMPO)
 				for (int z : j.tributos)
@@ -944,6 +1009,8 @@ inline void ajustarPlan(const Duelo& d, int yo, std::vector<Jugada>& c, const Es
 			break;
 		case J_ACTIVAR: {
 			b -= 50.0f * ep.estilo.ordenInvocar;
+			// (rama classic-mazos-torneo) con el mazo casi vacio no se roba de mas (los de robo: Exodia, Biblioteca)
+			if (papel(d.base, id, 'o') && x.mazo.size() <= 6) b -= 300.0f * (float)(7 - (int)x.mazo.size());
 			// jugador trampero: limpiar sus boca abajo antes de atacar (MST, Plumero, Tormenta)
 			if (papel(d.base, id, 't') && y.colocadasMT() > 0 && m1) b += 320.0f * std::max(0.0f, lec.trampas - 0.2f) * (0.5f + lec.confianza);
 			// esperar: no gastar el quitamonstruos en un monstruo chico si el plan pide paciencia
@@ -971,6 +1038,9 @@ inline float ajusteRespuesta(const Duelo& d, int yo, const Lugar& f, const Estad
 	const std::string id = cartaEn(d, f);
 	float u = 0.0f;
 	if (ep.plan == PL_CASTIGO) u -= 100.0f;   // castiga a gusto
+	// (rama classic-mazos-torneo) con el mazo casi vacio no se roba de mas (Jar of Greed, Good Goblin Housekeeping...)
+	const size_t quedan = d.l[(size_t)yo].mazo.size();
+	if (papel(d.base, id, 'o') && quedan <= 6) u += 300.0f * (float)(7 - (int)quedan);
 	const bool clave = papel(d.base, id, 'c') || papel(d.base, id, 'n');
 	if (clave && d.ef.ataque.hay && d.ef.ataque.lado != yo) {
 		const Monstruo& a = d.l[(size_t)d.ef.ataque.lado].m[(size_t)std::max(0, std::min(ZONAS - 1, d.ef.ataque.zona))];

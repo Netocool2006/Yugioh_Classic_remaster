@@ -8,6 +8,11 @@
  *    duelos) lleva una estrella; los invalidos, el motivo.
  *      cruz arriba/abajo  elegir          X  acciones (Editar, Usar en los duelos, Renombrar, Copiar, Borrar)
  *      cuadrado           usar en los duelos                  circulo  volver al menu principal
+ *      triangulo          MAZOS DE TORNEO (rama classic-torneo-extras)
+ *  - MAZOS DE TORNEO: los 21 mazos de torneo (mazos_torneo.txt) como mazos listos, al estilo de los Structure Deck de
+ *    Master Duel: se ven (vista previa) y se copian a MIS MAZOS para usarlos o editarlos.
+ *      cruz arriba/abajo  elegir          X  acciones (Copiar a mis mazos, Copiar y editar, Volver)
+ *      cuadrado           copiar a mis mazos                  circulo  volver a MIS MAZOS
  *  - EDITOR (pantalla dividida): a la izquierda la carta elegida grande con su texto; en el medio el mazo (principal
  *    40-60 y extra hasta 15, con contadores); a la derecha la coleccion en rejilla con la busqueda y los filtros.
  *      cruz / stick izq   mover (pasando del mazo a la coleccion por los bordes)   stick der izq/der: saltar de lado
@@ -137,10 +142,10 @@ inline void aplicarOpcionProhibidas(mazo::Coleccion& col, const std::string& rut
 constexpr int COL_COLUMNAS = 6, COL_FILAS = 4, POR_PAGINA = COL_COLUMNAS * COL_FILAS;
 constexpr int MAZO_COLUMNAS = 10, EXTRA_COLUMNAS = 8;
 
-enum Pantalla { P_LISTA = 0, P_EDITOR };
+enum Pantalla { P_LISTA = 0, P_EDITOR, P_TORNEO };   // (P_TORNEO: rama classic-torneo-extras)
 enum Capa { K_NADA = 0, K_PREGUNTA, K_FILTROS, K_TECLADO };
 enum Area { A_COLECCION = 0, A_MAZO };
-enum Pregunta { Q_NADA = 0, Q_ACCIONES, Q_BORRAR, Q_SALIR_EDITOR };
+enum Pregunta { Q_NADA = 0, Q_ACCIONES, Q_BORRAR, Q_SALIR_EDITOR, Q_TORNEO };
 enum Teclado { T_BUSCAR = 0, T_NOMBRE_MAZO, T_NOMBRE_NUEVO };
 // acciones del mazo (Q_ACCIONES)
 enum Accion { AC_EDITAR = 0, AC_USAR, AC_RENOMBRAR, AC_COPIAR, AC_BORRAR, AC_VOLVER };
@@ -163,6 +168,9 @@ public:
 
 	// lista de mazos
 	int cursorLista{ 0 };   // 0..mazos.size() (el ultimo = "+ Nuevo mazo")
+	// rama classic-torneo-extras: los mazos de torneo (los carga el juego: mazo::leerMazosTorneo) y el elegido
+	std::vector<mazo::MazoTorneo> torneos;
+	int cursorTorneo{ 0 };
 
 	// editor
 	mazo::Mazo mazo;            // el que se esta armando
@@ -299,6 +307,7 @@ public:
 		if (capa == K_TECLADO) return avanzarTeclado(p);
 		if (capa == K_FILTROS) return avanzarFiltros(p);
 		if (pantalla == P_LISTA) return avanzarLista(p);
+		if (pantalla == P_TORNEO) return avanzarTorneo(p);
 		avanzarEditor(p);
 	}
 
@@ -368,6 +377,53 @@ public:
 		} else {
 			cursorLista = n;
 			avisar(T("Mazo copiado"));
+		}
+	}
+	// rama classic-torneo-extras: MAZOS DE TORNEO (Triangulo en MIS MAZOS)
+	void abrirTorneos()
+	{
+		if (torneos.empty()) {
+			avisar(T("No hay mazos de torneo"));
+			return;
+		}
+		pantalla = P_TORNEO;
+		capa = K_NADA;
+		cursorTorneo = std::clamp(cursorTorneo, 0, (int)torneos.size() - 1);
+		avisar(T("X: copiar a tus mazos para usarlo o editarlo"));
+	}
+	// copia el mazo de torneo i a MIS MAZOS (con su nombre en el idioma actual); editar: lo abre en el editor
+	int copiarTorneo(int i, bool editar)
+	{
+		if (i < 0 || i >= (int)torneos.size()) return -1;
+		mazo::Mazo m = torneos[(size_t)i].mazo;
+		m.nombre = torneos[(size_t)i].nombre(enIngles()).substr(0, 60);
+		m.ordenar(*col);
+		const int n = bib->agregar(m);
+		if (n < 0) {
+			avisar(T("Ya hay 20 mazos: borra uno"));
+			return -1;
+		}
+		cursorLista = n;
+		if (editar) editarMazo(n);
+		avisar(T("Mazo de torneo copiado: ") + m.nombre);
+		return n;
+	}
+	void avanzarTorneo(uint32_t p)
+	{
+		const int n = (int)torneos.size();
+		if (n == 0) {
+			pantalla = P_LISTA;
+			return;
+		}
+		if (p & C_ARRIBA) cursorTorneo = (cursorTorneo + n - 1) % n;
+		if (p & C_ABAJO) cursorTorneo = (cursorTorneo + 1) % n;
+		if (p & (C_ARRIBA | C_ABAJO)) tCursor = 0.0f;
+		if (p & C_X) abrirPregunta(Q_TORNEO, torneos[(size_t)cursorTorneo].nombre(enIngles()), { "Copiar a mis mazos", "Copiar y editar", "Volver" });
+		if (p & C_CUADRADO) copiarTorneo(cursorTorneo, false);
+		if (p & C_CIRCULO) {
+			pantalla = P_LISTA;
+			capa = K_NADA;
+			cursorLista = std::clamp(cursorLista, 0, (int)bib->mazos.size());
 		}
 	}
 	void borrarMazo(int i)
@@ -548,6 +604,7 @@ private:
 			}
 		}
 		if ((p & C_CUADRADO) && !nuevo) usarMazo(cursorLista);
+		if (p & C_TRIANGULO) abrirTorneos();   // (rama classic-torneo-extras)
 		if (p & C_CIRCULO) cerrar();   // al menu principal
 	}
 
@@ -733,6 +790,9 @@ private:
 			case AC_BORRAR: abrirPregunta(Q_BORRAR, T("¿Borrar el mazo?") + " " + bib->mazos[(size_t)cursorLista].nombre, { "Borrar", "Cancelar" }, 1); break;
 			default: break;
 			}
+		} else if (q == Q_TORNEO) {   // (rama classic-torneo-extras)
+			if (cancelar || opcion == 2) return;
+			copiarTorneo(cursorTorneo, opcion == 1);
 		} else if (q == Q_BORRAR) {
 			if (!cancelar && opcion == 0) borrarMazo(cursorLista);
 		} else if (q == Q_SALIR_EDITOR) {

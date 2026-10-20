@@ -67,6 +67,7 @@ axe_of_despair|k
 axe_raider|g
 b_e_s_big_core|g
 backfire|q
+bad_reaction_to_simochi|q
 ballista_of_rampart_smashing|k
 balloon_lizard|w
 banisher_of_the_light|w
@@ -105,6 +106,8 @@ blue_eyes_shining_dragon|eg
 blue_eyes_toon_dragon|begk
 boar_soldier|g
 book_of_life|d
+book_of_moon|d
+book_of_taiyou|d
 bottomless_shifting_sand|d
 bottomless_trap_hole|cd
 bowganian|q
@@ -121,6 +124,7 @@ call_of_the_mummy|e
 cannon_soldier|q
 card_destruction|mo
 card_of_safe_return|or
+card_of_sanctity|o
 castle_of_dark_illusions|w
 catapult_turtle|q
 cave_dragon|bg
@@ -189,6 +193,7 @@ dark_sage|ego
 dark_scorpion_chick_the_yellow|d
 dark_scorpion_cliff_the_trap_remover|dt
 dark_scorpion_meanae_the_thorn|ow
+dark_scorpion_burglars|m
 dark_scorpion_combination|c
 dark_spirit_of_the_silent|c
 dark_zebra|g
@@ -219,6 +224,7 @@ disc_fighter|d
 divine_wrath|dn
 dokurorider|k
 don_turtle|e
+don_zaloog|m
 dora_of_fate|cq
 doriado_s_blessing|k
 double_coston|g
@@ -244,6 +250,7 @@ elemental_hero_flame_wingman|eq
 elemental_hero_thunder_giant|de
 elemental_mistress_doriado|k
 elephant_statue_of_disaster|q
+emergency_provisions|o
 enemy_controller|x
 enraged_battle_ox|g
 eria_the_water_charmer|x
@@ -307,6 +314,7 @@ goblin_of_greed|w
 goblin_thief|q
 gogiga_gagagigo|g
 golem_sentry|dw
+good_goblin_housekeeping|o
 gora_turtle|b
 graceful_charity|o
 gradius_option|e
@@ -314,6 +322,7 @@ granadora|eg
 granmarg_the_rock_monarch|dg
 grave_ohja|q
 grave_protector|w
+gravekeeper_s_assailant|d
 gravekeeper_s_cannonholder|q
 gravekeeper_s_chief|e
 gravekeeper_s_curse|q
@@ -340,6 +349,7 @@ gust|t
 hamburger_recipe|k
 hammer_shot|d
 hand_of_nephthys|e
+hane_hane|d
 harpie_lady_3|b
 harpie_lady_sisters|e
 harpie_s_feather_duster|t
@@ -399,7 +409,7 @@ kaiser_sea_horse|g
 kaminote_blow|d
 kelbek|w
 king_dragun|e
-king_of_the_skull_servants|de
+king_of_the_skull_servants|degk
 king_of_the_swamp|o
 king_tiger_wanghu|eg
 kiryu|ek
@@ -422,18 +432,19 @@ legendary_jujitsu_master|w
 legendary_sword|k
 lekunga|egr
 level_limit_area_b|b
-level_up|e
+level_up|ek
 lighten_the_load|o
 lightforce_sword|d
 lightning_blade|k
 lightning_vortex|d
 limiter_removal|k
 little_winguard|w
+lord_of_d|ek
 lord_poison|e
 luster_dragon|g
 luster_dragon_2|g
 machine_conversion_factory|k
-machine_duplication|e
+machine_duplication|ek
 mad_dog_of_darkness|g
 mage_power|k
 magic_drain|n
@@ -441,6 +452,7 @@ magic_jammer|n
 magical_hats|t
 magical_marionette|d
 magical_scientist|be
+magician_of_faith|r
 magician_s_circle|c
 maharaghi|e
 maiden_of_the_aqua|w
@@ -469,6 +481,7 @@ messenger_of_peace|b
 metal_armored_bug|g
 metallizing_parasite_lunatite|ek
 metalzoa|eg
+metamorphosis|k
 meteor_of_destruction|q
 meteorain|c
 mid_shield_gardna|nw
@@ -489,6 +502,7 @@ morphing_jar_2|e
 mother_grizzly|e
 mudora|w
 multiplication_of_ants|e
+mustering_of_the_dark_scorpions|e
 my_body_as_a_shield|nt
 mystic_swordsman_lv2|de
 mystic_swordsman_lv4|deg
@@ -498,6 +512,7 @@ mystical_elf|w
 mystical_moon|k
 mystical_space_typhoon|dt
 necklace_of_command|mo
+necrovalley|k
 needle_burrower|q
 needle_ceiling|d
 needle_wall|d
@@ -534,6 +549,7 @@ paladin_of_white_dragon|bdek
 pandemonium_watchbear|w
 paralyzing_potion|b
 parasite_paracide|e
+penguin_soldier|d
 performance_of_sword|k
 peten_the_dark_clown|er
 physical_double|ce
@@ -553,6 +569,7 @@ princess_of_tsurugi|q
 protector_of_the_sanctuary|w
 pyramid_turtle|e
 rafflesia_seduction|x
+rain_of_mercy|q
 raise_body_heat|k
 rare_metal_dragon|g
 raregold_armor|b
@@ -565,8 +582,9 @@ red_eyes_darkness_dragon|e
 reflect_bounder|gq
 regenerating_mummy|g
 reinforcement_of_the_army|o
-release_restraint|e
+release_restraint|ek
 relinquished|dk
+reload|o
 rescue_cat|e
 reshef_the_dark_being|kx
 restructer_revolution|q
@@ -583,6 +601,7 @@ robotic_knight|w
 roc_from_the_valley_of_haze|g
 rock_bombardment|q
 roulette_barrel|dw
+royal_decree|n
 royal_magical_library|ow
 royal_oppression|c
 royal_surrender|n
@@ -625,6 +644,7 @@ skull_dog_marron|w
 skull_guardian|k
 skull_knight_2|e
 skull_lair|d
+skull_servant|k
 sky_scout|g
 slate_warrior|g
 smashing_ground|d
@@ -636,6 +656,7 @@ solemn_wishes|o
 sonic_bird|o
 sonic_duck|g
 sorcerer_of_dark_magic|egn
+soul_exchange|x
 soul_of_purity_and_light|e
 soul_resurrection|d
 soul_tiger|w
@@ -645,6 +666,7 @@ sparks|q
 spear_cretin|e
 spear_dragon|g
 special_hurricane|d
+spell_economics|b
 spell_purification|d
 spell_shield_type_8|n
 spell_vanishing|n
@@ -662,6 +684,7 @@ spirit_of_flames|egr
 spirit_of_the_breeze|w
 spirit_of_the_harp|w
 spirit_of_the_pharaoh|egr
+spiritual_energy_settle_machine|k
 stamping_destruction|dt
 statue_of_the_wicked|ce
 staunch_defender|c
@@ -684,6 +707,7 @@ terraforming|o
 terrorking_archfiend|g
 terrorking_salmon|g
 teva|b
+the_a_forces|k
 the_agent_of_creation_venus|e
 the_agent_of_judgment_saturn|gq
 the_agent_of_wisdom_mercury|o
@@ -696,7 +720,7 @@ the_earth_hex_sealed_fusion|e
 the_end_of_anubis|g
 the_fiend_megacyber|e
 the_first_sarcophagus|ce
-the_flute_of_summoning_dragon|e
+the_flute_of_summoning_dragon|ek
 the_forceful_sentry|m
 the_forgiving_maiden|w
 the_gross_ghost_of_fled_dreams|w
@@ -851,3 +875,10 @@ viser_des|d
 vorse_raider|g
 zera_the_mant|k
 zera_ritual|k
+command_knight|w
+cyber_dragon|e
+goblin_zombie|o
+il_blud|de
+izanagi|e
+yamato_no_kami|ert
+drillroid|d

@@ -101,3 +101,10 @@ Medición (`src/pruebas/prueba_ia_humana.cpp`, 200 duelos humana contra clásica
 los dos rivales de cada par del MISMO nivel, cada IA juega cada mazo una vez; 19-oct-2026, tras "fuerte desde el nivel 1"): la humana gana el 68,5 % (137-63) y le gana a la clásica en todos los niveles (n1 73 %, n2 73 %, n3 69 %, n4 69 %, n5 66 %, n6 70 %, n7 58 %, n8 66 %), 35,5 ms de media por decisión imaginada (96 simulaciones), máximo 146 ms, errores creíbles 0,7 %, 0 jugadas ilegales; la prueba falla si la humana gana menos del 55 %, si hay jugadas
 ilegales o si una decisión pasa de 175 ms. Variables de afinado: `DEPURA`, `KPRIOR`, `HORIZONTE`, `WCARTAS`,
 `NIVELSIM`, `OBVIA`, `SIN_DIVERSIDAD`.
+
+## Mazos de torneo (rama classic-mazos-torneo)
+21 mazos curados a mano (5 inspirados en Master Duel y 16 arquetipos de la era Goat) en `datos/mazos_torneo.txt`
+(`mazos_torneo.py` los valida). Van a los genéricos de nivel 7-8 y a los personajes fuertes como variantes aparte
+(`Rival::torneo`): si `prepararRival` saca uno (40 % genéricos, 30-40 % personajes, nunca el mismo dos duelos seguidos)
+se juega tal cual, sin reequilibrar ni diluir, con su plan. El mazo dinámico y los pools no los ven. Detalle, fuentes,
+sustituciones y medición en `docs/mazos_torneo.md`; prueba: `src/pruebas/prueba_torneo.cpp`.

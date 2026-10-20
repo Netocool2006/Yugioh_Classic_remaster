@@ -107,6 +107,11 @@ fallas que necesitan una decisión del usuario están en `docs/decisiones_pendie
 - `CU-FE-CONS-LISTA-SOLO-VER`: la lista de cartas no agrega ni guarda
 - `CU-FE-CONS-CARGAR`: los mazos vuelven igual al leerlos
 - `CU-FE-CONS-MAZO-EN-DUELO`: el duelo roba del mazo activo, barajado
+- `CU-FE-CONS-TORNEO-ABRIR`: Triángulo en MIS MAZOS abre MAZOS DE TORNEO con los 21 mazos (rama classic-torneo-extras)
+- `CU-FE-CONS-TORNEO-VALIDOS`: los 21 mazos de torneo son válidos en la colección del jugador
+- `CU-FE-CONS-TORNEO-VOLVER`: círculo en MAZOS DE TORNEO vuelve a MIS MAZOS
+- `CU-FE-CONS-TORNEO-COPIAR`: X > Copiar a mis mazos (o Cuadrado) agrega el mazo a MIS MAZOS con las mismas cartas y su nombre
+- `CU-FE-CONS-TORNEO-EDITAR`: Copiar y editar abre el editor sobre la copia y se edita como cualquier mazo
 - `CU-FE-LISTA-CARTAS`: la lista de cartas muestra la colección y círculo la cierra
 
 ### CU-FE-GALERIA: galería de figuras 3D
@@ -242,6 +247,7 @@ fallas que necesitan una decisión del usuario están en `docs/decisiones_pendie
 - `CU-FE-IDIOMA-RIVALES`: nombre y lema de cada rival
 - `CU-FE-IDIOMA-CARTAS`: la colección en inglés (los filtros siguen igual)
 - `CU-FE-IDIOMA-CONSTRUCTOR`: los avisos del constructor
+- `CU-FE-IDIOMA-TORNEO`: MAZOS DE TORNEO, sus acciones y el nombre de cada mazo en español e inglés
 - `CU-CARTA-<id>-DATOS` (por carta): nombre, texto, atributo y tipo en ES y EN
 
 ### CU-FE-MANDO: el mando
@@ -367,6 +373,41 @@ fallas que necesitan una decisión del usuario están en `docs/decisiones_pendie
 - `CU-BE-IA-HUMANA-FAROLES`: faroles y trampas guardadas
 - `CU-BE-IA-HUMANA-ERRORES`: errores creíbles por nivel
 
+### CU-BE-TORNEO: mazos de torneo curados (rama classic-mazos-torneo; `datos/mazos_torneo.txt`, `docs/mazos_torneo.md`)
+
+- `CU-BE-TORNEO-LEGAL`: los 21 mazos de torneo son legales (40, copias, banlist Goat, fusiones con materiales y
+  Polymerization o con Metamorphosis, rituales con su magia, especiales con lo que los saca)
+- `CU-BE-TORNEO-ASIGNACION`: cada mazo va a algún rival; solo genéricos de nivel 7-8, personajes de nivel 5+ y Joey
+- `CU-BE-TORNEO-CARGADOR`: salen tal cual, con la probabilidad esperada y nunca a quien no tiene
+- `CU-BE-TORNEO-IA-COMBOS`: la IA juega sus cartas clave y combos en duelos IA contra IA, sin jugadas ilegales
+- `CU-BE-TORNEO-GANA-N8`: los mazos de torneo le ganan en mayoría a los temáticos de nivel 8
+- `CU-BE-TORNEO-HUMANA`: la IA humana también los juega sin jugadas ilegales
+- `CU-BE-TORNEO-JUEGO-CARGA`: el juego (`Base::leer`) carga los mazos de torneo y sus asignaciones
+- `CU-BE-TORNEO-NIVEL-BAJO`: los niveles 1-4 nunca sacan un mazo de torneo (salvo Joey: decisión del usuario)
+- `CU-BE-TORNEO-TAL-CUAL`: el mazo de torneo del duelo es el de la lista, con su plan, y el duelo empieza con él
+- `CU-BE-TORNEO-NO-REPITE`: el mismo mazo de torneo no sale dos duelos seguidos
+- `CU-BE-TORNEO-METAMORFOSIS`: Metamorphosis trae a Thousand-Eyes Restrict (Goat Control)
+- `CU-BE-TORNEO-EXODIA-IA`: la IA junta las piezas de Exodia (no las invoca ni las descarta)
+- `CU-BE-TORNEO-EXACTAS`: las listas usan las 10 cartas que faltaban (no los sustitutos) y todas tienen datos y efecto
+- `CU-BE-TORNEO-JOEY`: Joey (nivel 4) lleva Gearfried y Equipos y le sale tal cual
+
+### CU-BE-EXTRA: las 10 cartas extra de los mazos de torneo (rama classic-torneo-extras; `datos/cartas_extra.txt`)
+
+Cada una tiene además su caso largo en `prueba_efectos.cpp` (`tandaTorneoExtras`), su certificación y sus hojas
+`CU-CARTA-<id>-*`.
+
+- `CU-BE-EXTRA-COMMAND-KNIGHT`: tus Guerreros +400 ATK; con otro monstruo no se le ataca
+- `CU-BE-EXTRA-CYBER-DRAGON`: invocación especial desde la mano si solo el rival controla monstruos
+- `CU-BE-EXTRA-FOOLISH-BURIAL`: un monstruo de tu mazo al cementerio
+- `CU-BE-EXTRA-GOBLIN-ZOMBIE`: del campo al cementerio, busca un Zombi de 1200 DEF o menos
+- `CU-BE-EXTRA-IL-BLUD`: invocado de nuevo, invoca un Zombi de la mano o de un cementerio; si se va, se destruye
+- `CU-BE-GEMINIS-REGLA`: un Géminis boca arriba se invoca de nuevo con la invocación normal del turno y gana su efecto
+- `CU-BE-EXTRA-MAGICAL-MALLET`: las cartas elegidas de la mano al mazo y roba las mismas
+- `CU-BE-EXTRA-IZANAGI`: invocación especial desterrando un Spirit de la mano; los Spirit se quedan si quieres
+- `CU-BE-EXTRA-YAMATO`: no se invoca normal; desterrando un Spirit del cementerio; vuelve a la mano al final del turno
+- `CU-BE-EXTRA-CELTIC-GUARD`: no lo destruye en batalla un monstruo de 1900 ATK o más
+- `CU-BE-EXTRA-DRILLROID`: destruye al que está en defensa antes del cálculo de daño
+
 ### CU-BE-MAZO: validación de mazos
 
 - `CU-BE-MAZO-INICIAL`: el mazo inicial es válido
@@ -380,7 +421,7 @@ fallas que necesitan una decisión del usuario están en `docs/decisiones_pendie
 
 ## CU-CARTA: carta por carta
 
-Para cada una de las 1774 cartas (`<id>` es su id). Estas hojas no se listan una por una aquí: salen de los datos de
+Para cada una de las 1784 cartas (`<id>` es su id). Estas hojas no se listan una por una aquí: salen de los datos de
 las cartas y están todas en `resultados.tsv` de cada ciclo.
 
 - `CU-CARTA-<id>-DATOS`: la carta en ES y EN con nombre y texto, la misma clase, nivel, ATK y DEF, el atributo y el
@@ -402,4 +443,4 @@ las cartas y están todas en `resultados.tsv` de cada ciclo.
 
 Cada prueba de `ciclo_completo.sh` también es un caso (`CU-PRUEBA-<nombre>`): COMPILAR-JUEGO, prueba_mando,
 prueba_constructor, prueba_juego, prueba_duelo, prueba_efectos, prueba_ia, prueba_variedad, prueba_ia_humana,
-prueba_audio, CERTIFICACION y CASOS-DE-USO.
+prueba_torneo, prueba_audio, CERTIFICACION y CASOS-DE-USO.

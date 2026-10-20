@@ -104,6 +104,17 @@ inline void menu(Juego& g)
 	cu::caso("CU-FE-MENU-CONSTRUIR", g.constructorMazo.abierto && !g.constructorMazo.soloVer, "CONSTRUCCION DE DECK no abrio el constructor");
 	cu::caso("CU-FE-MENU-CONSTRUIR", g.sonido.musica == "musica_constructor", "musica '%s' en el constructor", g.sonido.musica.c_str());
 	cu::caso("CU-FE-CONS-MIS-MAZOS", g.constructorMazo.pantalla == constructor::P_LISTA && !g.biblioteca.mazos.empty(), "el constructor no abrio en MIS MAZOS");
+	// (rama classic-torneo-extras) Triangulo: MAZOS DE TORNEO (los 21, listos para copiar); circulo vuelve a MIS MAZOS
+	g.apretar(PAD_TRIANGLE, 0.3f);
+	cu::caso("CU-FE-CONS-TORNEO-ABRIR", g.constructorMazo.pantalla == constructor::P_TORNEO && g.constructorMazo.torneos.size() == 21,
+	         "Triangulo no abrio MAZOS DE TORNEO (pantalla %d, %d mazos)", (int)g.constructorMazo.pantalla, (int)g.constructorMazo.torneos.size());
+	{
+		int validos = 0;
+		for (const mazo::MazoTorneo& t : g.constructorMazo.torneos) validos += t.mazo.valido(g.coleccion) ? 1 : 0;
+		cu::caso("CU-FE-CONS-TORNEO-VALIDOS", validos == 21, "%d de %d mazos de torneo validos en la coleccion del jugador", validos, (int)g.constructorMazo.torneos.size());
+	}
+	g.apretar(PAD_CIRCLE, 0.3f);
+	cu::caso("CU-FE-CONS-TORNEO-VOLVER", g.constructorMazo.abierto && g.constructorMazo.pantalla == constructor::P_LISTA, "circulo en MAZOS DE TORNEO no volvio a MIS MAZOS");
 	// circulo en MIS MAZOS: vuelve al menu
 	g.apretar(PAD_CIRCLE, 0.3f);
 	cu::caso("CU-FE-CONS-CERRAR", !g.constructorMazo.abierto && v.pantalla == VD::MENU, "circulo en MIS MAZOS no volvio al menu");
@@ -1224,6 +1235,15 @@ inline void idiomaTodo(Juego& g)
 	const std::string t1 = constructor::T("Máximo 3 copias");
 	idioma::actual() = idioma::ES;
 	cu::caso("CU-FE-IDIOMA-CONSTRUCTOR", t1 != "Máximo 3 copias", "el constructor no traduce sus avisos");
+	// (rama classic-torneo-extras) MAZOS DE TORNEO en ingles: titulo, acciones y nombre de cada mazo
+	idioma::actual() = idioma::EN;
+	const std::string t2 = constructor::T("MAZOS DE TORNEO"), t3 = constructor::T("Copiar a mis mazos"), t4 = constructor::T("Mazo de torneo copiado: ");
+	idioma::actual() = idioma::ES;
+	cu::caso("CU-FE-IDIOMA-TORNEO", t2 == "TOURNAMENT DECKS" && t3 == "Copy to my decks" && t4 == "Tournament deck copied: ", "MAZOS DE TORNEO sin traducir ('%s', '%s')", t2.c_str(),
+	         t3.c_str());
+	int sinEn = 0;
+	for (const mazo::MazoTorneo& t : g.constructorMazo.torneos) sinEn += t.nombreEn.empty() || t.nombre(true) != t.nombreEn || t.nombre(false) != t.nombreEs;
+	cu::caso("CU-FE-IDIOMA-TORNEO", !g.constructorMazo.torneos.empty() && sinEn == 0, "%d mazos de torneo sin nombre en ingles", sinEn);
 }
 
 // ------------------------------------------------------------------------------------------------- mando

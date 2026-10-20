@@ -256,7 +256,7 @@ inline void cartas(const Base& base, const std::string& ui, const std::string& c
 			if (x.second > n) r = x.first, n = x.second;
 		return r;
 	};
-	static const std::set<std::string> SUB_EFECTO = { "efecto", "volteo", "espiritu", "union", "toon", "firma" };
+	static const std::set<std::string> SUB_EFECTO = { "efecto", "volteo", "espiritu", "union", "toon", "geminis", "firma" };   // (geminis: rama classic-torneo-extras)
 	int nCartas = 0;
 	for (const auto& p : es) {
 		const std::string& id = p.first;

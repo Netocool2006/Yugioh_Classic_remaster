@@ -23,6 +23,8 @@
 		rutaMazoJ = mazo::rutaMazo(getAssetPath());
 		leerOpcionBanlist();
 		biblioteca.cargar(rutaMazoJ, coleccion, idioma::ingles());   // (la primera vez: importa mazo.txt y los mazos de inicio)
+		constructorMazo.torneos = mazo::leerMazosTorneo(getAssetPath() + "ui/");   // (rama classic-torneo-extras: MAZOS DE TORNEO)
+		fprintf(stderr, "[mazo] mazos de torneo: %d\n", (int)constructorMazo.torneos.size());
 		tomarMazoActivo();
 		repartir();
 		interfazDuelo.conectarConstructor(&constructorMazo);

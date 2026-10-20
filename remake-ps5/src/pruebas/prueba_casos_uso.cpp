@@ -192,6 +192,8 @@ int main(int argc, char** argv)
 		cub::reglas(base);
 		cub::atajos(base);
 		cub::mazos(ui);
+		cub::torneo(base);   // (rama classic-mazos-torneo)
+		cub::torneoExtras(base);   // (rama classic-torneo-extras)
 	}
 	if (solo.empty() || solo == "cartas") {
 		fprintf(stderr, "== cartas\n");

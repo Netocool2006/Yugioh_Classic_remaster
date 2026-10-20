@@ -313,6 +313,59 @@ int main(int argc, char** argv)
 		}
 	}
 
+	// ---- 5. (rama classic-torneo-extras) MAZOS DE TORNEO: Triangulo en MIS MAZOS; se ven y se copian a MIS MAZOS
+	{
+		Constructor t;
+		t.abrir(col, bib);
+		t.torneos = mazo::leerMazosTorneo(ui);
+		CHEQUEAR(t.torneos.size() == 21, "esperaba 21 mazos de torneo, hay %d", (int)t.torneos.size());
+		for (const mazo::MazoTorneo& m : t.torneos) {
+			std::string motivo;
+			CHEQUEAR(m.mazo.valido(col, &motivo), "mazo de torneo '%s' no valido en la coleccion: %s", m.nombreEs.c_str(), motivo.c_str());
+			CHEQUEAR(!m.nombreEs.empty() && !m.nombreEn.empty(), "mazo de torneo '%s' sin nombre ES/EN", m.clave.c_str());
+		}
+		pulsar(t, C_TRIANGULO);
+		CHEQUEAR(t.pantalla == P_TORNEO, "Triangulo no abrio MAZOS DE TORNEO");
+		pulsar(t, C_ABAJO, 3);
+		const int elegido = t.cursorTorneo;
+		CHEQUEAR(elegido == 3, "el cursor de los mazos de torneo no bajo (%d)", elegido);
+		const size_t antes = bib.mazos.size();
+		pulsar(t, C_X);
+		CHEQUEAR(t.capa == K_PREGUNTA && t.pregunta == Q_TORNEO && t.opciones.size() == 3, "X no abrio las acciones del mazo de torneo");
+		pulsar(t, C_ABAJO);   // "Copiar y editar"
+		pulsar(t, C_X);
+		CHEQUEAR(bib.mazos.size() == antes + 1, "no se copio a MIS MAZOS");
+		CHEQUEAR(t.pantalla == P_EDITOR && t.editando == (int)antes, "Copiar y editar no abrio el editor sobre la copia");
+		if (bib.mazos.size() == antes + 1 && elegido >= 0 && elegido < (int)t.torneos.size()) {
+			const mazo::Mazo& copia = bib.mazos.back();
+			std::map<std::string, int> a, b;
+			for (const std::string& id : copia.principal) a[id]++;
+			for (const std::string& id : t.torneos[(size_t)elegido].mazo.principal) b[id]++;
+			CHEQUEAR(a == b && copia.fusion.size() == t.torneos[(size_t)elegido].mazo.fusion.size(), "la copia no tiene las mismas cartas");
+			CHEQUEAR(copia.nombre == t.torneos[(size_t)elegido].nombreEs, "la copia se llama '%s'", copia.nombre.c_str());
+			CHEQUEAR(copia.valido(col), "la copia no es valida");
+			// se edita como cualquier mazo: quitar una copia y guardar (41 -> 40 no: queda en 39 y no se guarda)
+			t.area = A_MAZO;
+			t.cursorMazo = 0;
+			t.enExtra = false;
+			CHEQUEAR(t.quitarElegida() && !t.guardar(), "con 39 cartas se guardo");
+			CHEQUEAR(bib.mazos.back().principal.size() == 40, "el mazo guardado cambio sin guardar");
+		}
+		pulsar(t, C_CIRCULO);   // (cambios sin guardar: pregunta)
+		CHEQUEAR(t.capa == K_PREGUNTA && t.pregunta == Q_SALIR_EDITOR, "no pregunto por los cambios");
+		pulsar(t, C_ABAJO);   // "Salir sin guardar"
+		pulsar(t, C_X);
+		CHEQUEAR(t.pantalla == P_LISTA, "no volvio a MIS MAZOS");
+		pulsar(t, C_TRIANGULO);
+		pulsar(t, C_CUADRADO);   // (Cuadrado: copia directo)
+		CHEQUEAR(bib.mazos.size() == antes + 2 && t.pantalla == P_TORNEO, "Cuadrado no copio el mazo de torneo");
+		pulsar(t, C_CIRCULO);
+		CHEQUEAR(t.pantalla == P_LISTA, "Circulo no volvio a MIS MAZOS");
+		bib.borrar((int)bib.mazos.size() - 1);
+		bib.borrar((int)bib.mazos.size() - 1);
+		fprintf(stderr, "[prueba] mazos de torneo: %d validos, copiar y editar OK\n", (int)t.torneos.size());
+	}
+
 	fprintf(stderr, "%s (%d fallos)\n", fallos ? "PRUEBA FALLIDA" : "PRUEBA OK", fallos);
 	return fallos ? 1 : 0;
 }

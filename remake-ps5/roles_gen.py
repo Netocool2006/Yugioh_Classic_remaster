@@ -50,6 +50,17 @@ MANO = {
     "solemn_judgment": "n", "magic_jammer": "n", "seven_tools_of_the_bandit": "n", "lava_golem": "egq", "dark_hole": "d", "raigeki": "d",
     "monster_reborn": "r", "premature_burial": "r", "call_of_the_haunted": "r",
 }
+# rama classic-mazos-torneo: las piezas de los mazos de torneo (datos/mazos_torneo.txt) que el texto no clasifica
+MANO.update({
+    "bad_reaction_to_simochi": "q", "rain_of_mercy": "q", "good_goblin_housekeeping": "o", "emergency_provisions": "o",
+    "reload": "o", "card_of_sanctity": "o", "spell_economics": "b", "royal_decree": "n", "book_of_moon": "d",
+    "book_of_taiyou": "d", "metamorphosis": "k", "magician_of_faith": "r", "penguin_soldier": "d", "hane_hane": "d",
+    "lord_of_d": "ek", "the_flute_of_summoning_dragon": "ek", "mustering_of_the_dark_scorpions": "e",
+    "don_zaloog": "m", "dark_scorpion_burglars": "m", "necrovalley": "k", "gravekeeper_s_assailant": "d",
+    "soul_exchange": "x", "spiritual_energy_settle_machine": "k", "the_a_forces": "k", "king_of_the_skull_servants": "gk",
+    "skull_servant": "k", "level_up": "ek", "release_restraint": "ek", "tsukuyomi": "d", "asura_priest": "g",
+    "machine_duplication": "ek", "toon_table_of_contents": "o",
+})
 
 
 def num(s):

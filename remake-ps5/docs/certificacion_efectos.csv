@@ -213,6 +213,7 @@ coffin_seller;Coffin Seller;Trampa (continua);trampa_continua;quemar;OK;1;0;SIN 
 cold_wave;Cold Wave;Magia (normal);magia_normal;-;OK;1;0;SIN PRUEBA;de la mano (tu fase principal);-;6;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
 collected_power;Collected Power;Trampa (normal);trampa_normal;destruir+equipar;OK;2;0;OK;responde a un ataque [escenario B];destruir+atk_def;26;0;caso a mano + plantilla;
 combination_attack;Combination Attack;Magia (rapida);magia_rapida;-;OK;2;0;SIN PRUEBA;;;2;0;caso a mano;no se activo en ningun contexto armado (de la mano (tu fase principal): ef.no_condicion)
+command_knight;Command Knight;Monstruo (efecto);efecto;atk_def;OK;1;0;OK;en el campo (efecto continuo);atk_def;5;0;caso a mano + plantilla;
 commencement_dance;Commencement Dance;Magia (ritual);magia_ritual;invocar;OK;0;0;OK;invocacion ritual;invocar;1;0;plantilla;
 compulsory_evacuation_device;Compulsory Evacuation Device;Trampa (normal);trampa_normal;a_la_mano;OK;1;0;OK;colocada (tu fase principal);a_la_mano;2;0;caso a mano + plantilla;
 confiscation;Confiscation;Magia (normal);magia_normal;descartar;OK;1;0;OK;de la mano (tu fase principal);descartar+pierde_lp;4;0;caso a mano + plantilla;
@@ -241,6 +242,7 @@ curse_of_fiend;Curse of Fiend;Magia (normal);magia_normal;posicion;OK;2;0;SIN PR
 curse_of_royal;Curse of Royal;Trampa (contraataque);trampa_contraataque;destruir+negar;OK;2;0;SIN PRUEBA;;;5;0;caso a mano;no se activo en ningun contexto armado (colocada (tu fase principal): ef.no_condicion)
 curse_of_the_masked_beast;Curse of the Masked Beast;Magia (ritual);magia_ritual;invocar;OK;0;0;OK;invocacion ritual;invocar;1;0;plantilla;
 cursed_seal_of_the_forbidden_spell;Cursed Seal of the Forbidden Spell;Trampa (contraataque);trampa_contraataque;destruir+negar+descartar;OK;1;0;OK;responde a una activacion;negar+descartar;5;0;caso a mano + plantilla;
+cyber_dragon;Cyber Dragon;Monstruo (efecto);efecto;invocar;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;6;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 cyber_harpie_lady;Cyber Harpie Lady;Monstruo (efecto);efecto;-;OK;2;0;SIN PRUEBA;en el campo (efecto continuo);-;5;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
 cyber_jar;Cyber Jar;Monstruo (volteo);volteo;destruir+invocar+posicion;OK;1;0;OK;volteo;destruir+buscar;2;0;caso a mano + plantilla;
 cyber_raider;Cyber Raider;Monstruo (efecto);efecto;destruir+equipar;OK;1;0;OK;invocacion normal [escenario B];destruir+atk_def;5;0;caso a mano + plantilla;
@@ -367,6 +369,7 @@ dream_clown;Dream Clown;Monstruo (efecto);efecto;destruir+posicion;OK;1;0;SIN PR
 dreamsprite;Dreamsprite;Monstruo (efecto);efecto;-;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;5;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
 drill_bug;Drill Bug;Monstruo (efecto);efecto;quemar+al_mazo;OK;1;0;SIN PRUEBA;ataca;-;8;0;caso a mano;no concluyente: se activa (ataca) pero su efecto no se ve en el escenario generico
 drillago;Drillago;Monstruo (efecto);efecto;-;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;5;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
+drillroid;Drillroid;Monstruo (efecto);efecto;destruir;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;5;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 driving_snow;Driving Snow;Trampa (normal);trampa_normal;destruir;OK;2;0;SIN PRUEBA;;;3;0;caso a mano;no se activo en ningun contexto armado (colocada (tu fase principal): ef.no_condicion)
 drop_off;Drop Off;Trampa (normal);trampa_normal;descartar;OK;1;0;SIN PRUEBA;;;2;0;caso a mano;no se activo en ningun contexto armado (colocada (tu fase principal): ef.no_condicion)
 dummy_golem;Dummy Golem;Monstruo (volteo);volteo;control;OK;0;0;OK;volteo;control;1;0;plantilla;
@@ -449,6 +452,7 @@ flash_assailant;Flash Assailant;Monstruo (efecto);efecto;atk_def;OK;1;0;OK;en el
 flint;Flint;Magia (equipo);magia_equipo;equipar+posicion+atk_def;OK;1;0;OK;de la mano (tu fase principal);equipar+atk_def;4;0;caso a mano + plantilla;
 flying_kamakiri_1;Flying Kamakiri #1;Monstruo (efecto);efecto;invocar;OK;1;0;OK;destruido en batalla;invocar+pierde_lp;6;0;caso a mano + plantilla;
 follow_wind;Follow Wind;Magia (equipo);magia_equipo;equipar+atk_def;OK;1;0;SIN PRUEBA;;;1;0;caso a mano;no se activo en ningun contexto armado (de la mano (tu fase principal): ef.sin_objetivo)
+foolish_burial;Foolish Burial;Magia (normal);magia_normal;descartar;OK;1;0;OK;de la mano (tu fase principal);descartar;2;0;caso a mano + plantilla;
 forced_ceasefire;Forced Ceasefire;Trampa (normal);trampa_normal;descartar;OK;0;0;OK;colocada (tu fase principal);descartar;1;0;plantilla;
 forced_requisition;Forced Requisition;Trampa (continua);trampa_continua;descartar;OK;1;0;SIN PRUEBA;colocada (tu fase principal);-;21;0;caso a mano;no concluyente: se activa (colocada (tu fase principal)) pero su efecto no se ve en el escenario generico
 forest;Forest;Magia (campo);magia_campo;atk_def;OK;1;0;OK;de la mano (tu fase principal);atk_def;6;0;caso a mano + plantilla;
@@ -506,6 +510,7 @@ goblin_king;Goblin King;Monstruo (efecto);efecto;atk_def;OK;1;0;OK;en el campo (
 goblin_of_greed;Goblin of Greed;Monstruo (efecto);efecto;descartar;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;7;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 goblin_s_secret_remedy;Goblin's Secret Remedy;Magia (normal);magia_normal;ganar_lp;OK;0;0;OK;de la mano (tu fase principal);ganar_lp +600 LP;1;0;plantilla;
 goblin_thief;Goblin Thief;Magia (normal);magia_normal;quemar+ganar_lp;OK;1;0;OK;de la mano (tu fase principal);quemar+ganar_lp danno 500 +500 LP;3;0;caso a mano + plantilla;
+goblin_zombie;Goblin Zombie;Monstruo (efecto);efecto;quemar+buscar+descartar;OK;1;0;OK;destruido en batalla;buscar+pierde_lp;3;0;caso a mano + plantilla;
 goddess_of_whim;Goddess of Whim;Monstruo (efecto);efecto;-;OK;2;0;OK;efecto de ignicion;atk_def;4;0;caso a mano + plantilla;
 goddess_with_the_third_eye;Goddess with the Third Eye;Monstruo (efecto);efecto;-;OK;2;0;SIN PRUEBA;en el campo (efecto continuo);-;8;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
 golden_castle_of_stromberg;Golden Castle of Stromberg;Magia (campo);magia_campo;destruir+quemar+invocar+desterrar;OK;1;0;SIN PRUEBA;de la mano (tu fase principal);-;5;0;caso a mano;no concluyente: se activa (de la mano (tu fase principal)) pero su efecto no se ve en el escenario generico
@@ -611,6 +616,7 @@ hungry_burger;Hungry Burger;Monstruo (ritual);ritual;invocar;OK;1;0;OK;invocacio
 hyena;Hyena;Monstruo (efecto);efecto;invocar;OK;2;0;SIN PRUEBA;destruido en batalla;al_mazo+pierde_lp;10;0;caso a mano;plantilla: invoca Hyenas del mazo y el mazo generico no tiene, solo se ve que baraja (caso a mano)
 hyper_hammerhead;Hyper Hammerhead;Monstruo (efecto);efecto;a_la_mano;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;7;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 hysteric_fairy;Hysteric Fairy;Monstruo (efecto);efecto;ganar_lp;OK;1;0;OK;efecto de ignicion;destruir+ganar_lp +1000 LP;2;0;caso a mano + plantilla;
+il_blud;Il Blud;Monstruo (geminis);geminis;destruir+invocar;OK;1;0;OK;efecto de ignicion;invocar;3;0;caso a mano + plantilla;
 impenetrable_formation;Impenetrable Formation;Magia (continua);magia_continua;atk_def;OK;2;0;SIN PRUEBA;de la mano (tu fase principal);equipar;12;0;caso a mano;plantilla: queda vinculada al monstruo elegido (se ve como equipo), el +700 DEF pide 2+ monstruos todos en defensa (caso a mano)
 imperial_order;Imperial Order;Trampa (continua);trampa_continua;negar;OK;2;0;SIN PRUEBA;colocada (tu fase principal);-;23;0;caso a mano;no concluyente: se activa (colocada (tu fase principal)) pero su efecto no se ve en el escenario generico
 inaba_white_rabbit;Inaba White Rabbit;Monstruo (espiritu);espiritu;-;OK;2;0;SIN PRUEBA;en el campo (efecto continuo);-;8;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
@@ -638,6 +644,7 @@ invasion_of_flames;Invasion of Flames;Monstruo (efecto);efecto;-;OK;2;0;SIN PRUE
 invigoration;Invigoration;Magia (equipo);magia_equipo;equipar+atk_def;OK;1;0;OK;de la mano (tu fase principal);equipar+atk_def;4;0;caso a mano + plantilla;
 invitation_to_a_dark_sleep;Invitation to a Dark Sleep;Monstruo (efecto);efecto;invocar;OK;1;0;SIN PRUEBA;invocacion normal;-;12;0;caso a mano;no concluyente: se activa (invocacion normal) pero su efecto no se ve en el escenario generico
 iron_blacksmith_kotetsu;Iron Blacksmith Kotetsu;Monstruo (volteo);volteo;buscar;OK;0;0;OK;volteo;buscar;1;0;plantilla;
+izanagi;Izanagi;Monstruo (efecto);efecto;invocar+a_la_mano;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;7;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 jade_insect_whistle;Jade Insect Whistle;Magia (normal);magia_normal;al_mazo;OK;1;0;SIN PRUEBA;de la mano (tu fase principal);-;6;0;caso a mano;no concluyente: se activa (de la mano (tu fase principal)) pero su efecto no se ve en el escenario generico
 jam_breeding_machine;Jam Breeding Machine;Magia (continua);magia_continua;invocar+ficha;OK;1;0;SIN PRUEBA;de la mano (tu fase principal);-;6;0;caso a mano;no concluyente: se activa (de la mano (tu fase principal)) pero su efecto no se ve en el escenario generico
 jam_defender;Jam Defender;Trampa (continua);trampa_continua;-;OK;2;0;SIN PRUEBA;colocada (tu fase principal);-;22;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
@@ -730,6 +737,7 @@ magic_jammer;Magic Jammer;Trampa (contraataque);trampa_contraataque;destruir+neg
 magic_reflector;Magic Reflector;Magia (normal);magia_normal;-;OK;1;0;SIN PRUEBA;;;2;0;caso a mano;no se activo en ningun contexto armado (de la mano (tu fase principal): ef.sin_objetivo)
 magical_hats;Magical Hats;Trampa (normal);trampa_normal;invocar+posicion;OK;1;0;OK;responde a un ataque;destruir+invocar+posicion;2;0;caso a mano + plantilla;
 magical_labyrinth;Magical Labyrinth;Magia (equipo);magia_equipo;invocar+equipar;OK;1;0;SIN PRUEBA;;;1;0;caso a mano;no se activo en ningun contexto armado (de la mano (tu fase principal): ef.sin_objetivo)
+magical_mallet;Magical Mallet;Magia (normal);magia_normal;al_mazo;OK;1;0;SIN PRUEBA;de la mano (tu fase principal);-;4;0;caso a mano;no concluyente: se activa (de la mano (tu fase principal)) pero su efecto no se ve en el escenario generico
 magical_marionette;Magical Marionette;Monstruo (efecto);efecto;destruir+atk_def;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;10;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 magical_merchant;Magical Merchant;Monstruo (volteo);volteo;-;OK;1;0;OK;volteo;buscar;2;0;caso a mano + plantilla;
 magical_plant_mandragola;Magical Plant Mandragola;Monstruo (volteo);volteo;-;OK;1;0;SIN PRUEBA;volteo;-;10;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
@@ -882,6 +890,7 @@ numinous_healer;Numinous Healer;Trampa (normal);trampa_normal;ganar_lp;OK;1;0;OK
 nutrient_z;Nutrient Z;Trampa (normal);trampa_normal;ganar_lp;OK;2;0;SIN PRUEBA;;;2;0;caso a mano;no se activo en ningun contexto armado (colocada (tu fase principal): ef.no_condicion)
 nuvia_the_wicked;Nuvia the Wicked;Monstruo (efecto);efecto;atk_def;OK;1;0;OK;en el campo (efecto continuo);atk_def;3;0;caso a mano + plantilla;
 obelisk_the_tormentor;Obelisk the Tormentor;Monstruo (efecto);efecto;destruir+negar;OK;1;0;OK;efecto de ignicion;destruir;2;0;caso a mano + plantilla;
+obnoxious_celtic_guard;Obnoxious Celtic Guard;Monstruo (efecto);efecto;-;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;6;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
 ocean_dragon_lord_neo_daedalus;Ocean Dragon Lord - Neo-Daedalus;Monstruo (efecto);efecto;-;OK;2;0;SIN PRUEBA;en el campo (efecto continuo);-;6;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
 offerings_to_the_doomed;Offerings to the Doomed;Magia (rapida);magia_rapida;destruir;OK;1;0;OK;de la mano (tu fase principal);destruir;5;0;caso a mano + plantilla;
 ojama_delta_hurricane;Ojama Delta Hurricane!!;Magia (normal);magia_normal;destruir;OK;2;0;SIN PRUEBA;;;4;0;caso a mano;no se activo en ningun contexto armado (de la mano (tu fase principal): ef.no_condicion)
@@ -1371,6 +1380,7 @@ xz_tank_cannon;XZ-Tank Cannon;Monstruo (fusion);fusion;destruir+descartar;OK;2;0
 y_dragon_head;Y-Dragon Head;Monstruo (union);union;invocar+equipar+atk_def;OK;2;0;SIN PRUEBA;en el campo (efecto continuo);-;5;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 yado_karu;Yado Karu;Monstruo (efecto);efecto;posicion+al_mazo;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;5;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 yamata_dragon;Yamata Dragon;Monstruo (espiritu);espiritu;quemar+robar;OK;0;0;OK;ataca;robar roba 2;1;0;plantilla;
+yamato_no_kami;Yamato-no-Kami;Monstruo (espiritu);espiritu;destruir;OK;1;0;OK;ataca;destruir;4;0;caso a mano + plantilla;
 yami;Yami;Magia (campo);magia_campo;atk_def;OK;1;0;OK;de la mano (tu fase principal);atk_def;6;0;caso a mano + plantilla;
 yata_garasu;Yata-Garasu;Monstruo (espiritu);espiritu;quemar;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;6;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 yellow_luster_shield;Yellow Luster Shield;Magia (continua);magia_continua;atk_def;OK;0;0;OK;de la mano (tu fase principal);atk_def;1;0;plantilla;

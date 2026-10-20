@@ -601,6 +601,47 @@ inline Mazo armarInicio(const Coleccion& col, const Inicio& ini, bool ingles)
 //   mazo.txt           copia del mazo activo (el formato de siempre: lo leen las versiones anteriores)
 // La primera vez se importa mazo.txt (si existe) como "Mi mazo" y se agregan los mazos de inicio.
 constexpr int MAX_MAZOS = 20;   // (como Master Duel)
+// rama classic-torneo-extras: los mazos de torneo (datos/mazos_torneo.txt, mazos_torneo.py: D|clave|plan|nombre ES|
+// nombre EN, M|clave|ids, X|clave|ids). En el constructor son mazos listos que el jugador copia a sus mazos y edita
+struct MazoTorneo {
+	std::string clave, nombreEs, nombreEn;
+	Mazo mazo;   // (sin nombre: se pone al copiarlo, en el idioma de ese momento)
+	const std::string& nombre(bool ingles) const { return ingles && !nombreEn.empty() ? nombreEn : nombreEs; }
+};
+inline std::vector<MazoTorneo> leerMazosTorneo(const std::string& carpetaUi)
+{
+	std::vector<MazoTorneo> r;
+	std::ifstream f(carpetaUi + "mazos_torneo.txt");
+	std::string l;
+	auto buscar = [&r](const std::string& clave) -> MazoTorneo* {
+		for (MazoTorneo& t : r)
+			if (t.clave == clave) return &t;
+		return nullptr;
+	};
+	while (std::getline(f, l)) {
+		if (!l.empty() && l.back() == '\r') l.pop_back();
+		if (l.size() < 2 || l[1] != '|') continue;
+		const std::vector<std::string> c = partir(l);
+		if (c.size() < 2) continue;
+		if (l[0] == 'D' && c.size() >= 5 && !buscar(c[1])) {
+			MazoTorneo t;
+			t.clave = c[1];
+			t.nombreEs = c[3];
+			t.nombreEn = c[4];
+			r.push_back(t);
+		} else if ((l[0] == 'M' || l[0] == 'X') && c.size() >= 3) {
+			MazoTorneo* t = buscar(c[1]);
+			if (!t) continue;
+			std::vector<std::string>& v = l[0] == 'M' ? t->mazo.principal : t->mazo.fusion;
+			v.clear();
+			for (const std::string& id : partir(c[2], ' '))
+				if (!id.empty()) v.push_back(id);
+		}
+	}
+	r.erase(std::remove_if(r.begin(), r.end(), [](const MazoTorneo& t) { return t.mazo.principal.empty(); }), r.end());
+	return r;
+}
+
 struct Biblioteca {
 	std::vector<Mazo> mazos;
 	std::vector<std::string> archivos;

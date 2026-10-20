@@ -38,6 +38,8 @@ CU-FE-CONS-USAR|prueba_constructor
 CU-FE-CONS-COPIAR|prueba_constructor
 CU-FE-CONS-RENOMBRAR|prueba_constructor
 CU-FE-CONS-BORRAR|prueba_constructor
+CU-FE-CONS-TORNEO-COPIAR|prueba_constructor
+CU-FE-CONS-TORNEO-EDITAR|prueba_constructor
 CU-FE-CONS-PROHIBIDAS|prueba_constructor
 CU-FE-CONS-FIRMA-BLOQUEADA|prueba_constructor
 CU-FE-CONS-INICIO-VALIDOS|prueba_constructor
@@ -67,3 +69,10 @@ CU-BE-IA-HUMANA-PRESUPUESTO|prueba_ia_humana
 CU-BE-IA-HUMANA-DIVERSIDAD|prueba_ia_humana
 CU-BE-IA-HUMANA-FAROLES|prueba_ia_humana
 CU-BE-IA-HUMANA-ERRORES|prueba_ia_humana
+# los mazos de torneo (prueba_torneo.cpp; rama classic-mazos-torneo)
+CU-BE-TORNEO-LEGAL|prueba_torneo
+CU-BE-TORNEO-ASIGNACION|prueba_torneo
+CU-BE-TORNEO-CARGADOR|prueba_torneo
+CU-BE-TORNEO-IA-COMBOS|prueba_torneo
+CU-BE-TORNEO-GANA-N8|prueba_torneo
+CU-BE-TORNEO-HUMANA|prueba_torneo

@@ -366,6 +366,11 @@
 			const size_t k = (size_t)mazoRivalIA.variante;
 			if (k < r->varEs.size()) v.varianteEs = r->varEs[k];
 			if (k < r->varEn.size()) v.varianteEn = r->varEn[k];
+			// rama classic-mazos-torneo: un mazo de torneo se nombra por su arquetipo
+			if (mazoRivalIA.torneo >= 0 && (size_t)mazoRivalIA.torneo < baseIA.torneos.size()) {
+				v.varianteEs = baseIA.torneos[(size_t)mazoRivalIA.torneo].nombreEs + " (torneo)";
+				v.varianteEn = baseIA.torneos[(size_t)mazoRivalIA.torneo].nombreEn + " (tournament)";
+			}
 		}
 		// rama classic-entornos: el lugar donde duela el personaje en la serie (su campo "entorno") rodea la mesa
 		// (rama classic-fondos: el "entorno" es el id del personaje = su fondo propio; una clave de tema tambien vale)

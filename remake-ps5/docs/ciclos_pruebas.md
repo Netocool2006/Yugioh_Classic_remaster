@@ -66,3 +66,19 @@ se prueban en su ventana; Magician's Circle y Scapegoat responden la repetición
 - Certificación: 1385 cartas con efecto, OK 1385, FALLA 0, SIN PRUEBA 0.
 - IA humana contra clásica: 67,5 % de victorias (27 de 40); 14,2 ms medios por decisión, máximo 101 ms (presupuesto
   ~150 ms).
+
+## Rama classic-mazos-torneo (20-10-2026)
+
+- **Ciclo 1** (`ciclos_logs/mazos_torneo_1`): 7029 casos, OK 7023, FALLA 6, DECISIÓN 0. Las 6 eran `prueba_variedad`
+  ("con la dificultad alta no gana más": 31 % contra 33 %). Causa: los combos nuevos de los mazos de torneo entraban
+  en el armado de los mazos dinámicos de todos los rivales. Arreglo: campo `torneo` en `combos.txt` (solo bono en el
+  duelo; no arman mazos dinámicos ni suman papel). Vuelve a 43 % contra 25 %.
+- **Ciclo 2** (`ciclos_logs/mazos_torneo_2`): **7029 casos, OK 7029, FALLA 0, DECISIÓN 0**. `prueba_torneo`: 21 mazos
+  legales, salen tal cual, 73 % de victorias (308/420) contra los temáticos de nivel 8, 0 jugadas ilegales.
+
+## Rama classic-torneo-extras (20-10-2026)
+
+- **Ciclo 1** (`ciclos_logs/torneo_extras_1`, con `YUGI_ASSETS=/compartido/classic-assets-torneo`): **7088 casos, OK
+  7088, FALLA 0, DECISIÓN 0** (hojas del mapa: 301). Certificación: 1395 cartas con efecto, OK 1395. `prueba_efectos`:
+  881 casos, 0 fallos. `prueba_torneo`: 21 mazos legales con las cartas exactas, 73 % (307/420) contra los temáticos de
+  nivel 8, 0 jugadas ilegales.

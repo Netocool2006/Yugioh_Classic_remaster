@@ -70,6 +70,7 @@ compilar prueba_efectos $G "$rama/src/pruebas/prueba_efectos.cpp" -o /tmp/prueba
 compilar prueba_ia $G "$rama/src/pruebas/prueba_ia.cpp" -o /tmp/prueba_ia && correr prueba_ia "$ui/" "$rama/datos/rivales.txt"
 compilar prueba_variedad $G "$rama/src/pruebas/prueba_variedad.cpp" -o /tmp/prueba_variedad && correr prueba_variedad "$ui/" "$rama/datos/"
 compilar prueba_ia_humana $G "$rama/src/pruebas/prueba_ia_humana.cpp" -o /tmp/prueba_ia_humana && correr prueba_ia_humana "$ui/" "$rama/datos/" 20
+compilar prueba_torneo $G "$rama/src/pruebas/prueba_torneo.cpp" -o /tmp/prueba_torneo && correr prueba_torneo "$ui/" "$rama/datos/" 20 1   # (rama classic-mazos-torneo)
 compilar prueba_audio clang++ -std=c++17 -O1 -I "$rama/src" -I "$rama/third_party" "$rama/src/pruebas/prueba_audio.cpp" -o /tmp/prueba_audio &&
 	correr prueba_audio "$assets/audio/" "$tmp/mezcla.wav" 4
 

@@ -859,6 +859,7 @@ static Intento intentar(const std::string& id, Contexto k, int variante, const E
 			r.motivo = "no entra al campo";
 			return r;
 		}
+		if (esGeminis(e.d, id)) e.d.l[0].m[(size_t)z].geminado = true;   // (rama classic-torneo-extras: un Geminis ya invocado de nuevo, con su efecto)
 		fuente = { 0, EN_MONSTRUO, z };
 		listo = true;
 		break;
