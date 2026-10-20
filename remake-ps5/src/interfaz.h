@@ -398,6 +398,13 @@ public:
 		}
 		vi.valor = lp;
 	}
+	// rama classic-visual-final (PC, YUGI_RESULTADO): los LP puestos de una vez, sin la animacion de los numeros
+	void fijarLP(bool rival, int lp)
+	{
+		Vida& vi = rival ? vidaR : vidaJ;
+		vi.valor = glm::clamp(lp, 0, 99999);
+		vi.mostrado = vi.fantasma = (float)vi.valor;
+	}
 
 	// selector de camara (esquina inferior izquierda del campo): el modo actual, segundos desde el ultimo cambio y
 	// hacia donde se cambio (+1 R1, -1 L1, 0 por variable/ajustes). El juego lo llama en cada cuadro
@@ -705,7 +712,7 @@ private:
 			if (c.size() < 9) continue;
 			CartaUI k;
 			k.id = c[0]; k.nombre = c[1]; k.clase = c[2]; k.atributo = c[3]; k.tipo = c[4];
-			k.nivel = atoi(c[5].c_str()); k.atk = atoi(c[6].c_str()); k.def = atoi(c[7].c_str()); k.desc = c[8];
+			k.nivel = atoi(c[5].c_str()); k.atk = atoi(c[6].c_str()); k.def = atoi(c[7].c_str()); k.desc = idioma::reglasEs(c[8]);
 			if (buscarCarta(k.id) >= 0) continue;
 			cartas.push_back(std::move(k));
 		}
@@ -1640,12 +1647,24 @@ private:
 	}
 
 	// etiqueta flotante de una zona: una pastilla de vidrio con el nombre y el numero en una sola linea
-	void etiqueta(glm::vec2 p, const std::string& titulo, const std::string& numero, glm::vec4 col)
+	// (rama classic-visual-final) puestas: las ya dibujadas en este cuadro (x0, y0, x1, y1): la etiqueta queda entera
+	// dentro de la pantalla (a la derecha de los paneles) y, si pisa a otra, sube una fila
+	void etiqueta(glm::vec2 p, const std::string& titulo, const std::string& numero, glm::vec4 col, std::vector<glm::vec4>* puestas = nullptr)
 	{
 		const float tt = 14.0f * s, tn = 20.0f * s;
 		const float wt = medir(F_TITULO, titulo, tt, 2.0f), wn = medir(F_NUMEROS, numero, tn);
 		const float w = wt + wn + 34.0f * s, h = 30.0f * s;
-		const float x = p.x - w * 0.5f, y = p.y - h;
+		float x = p.x - w * 0.5f, y = p.y - h;
+		if (puestas) {
+			if (x < W && x + w > CAMPO_X * s) x = glm::clamp(x, CAMPO_X * s + 8.0f * s, W - 10.0f * s - w);   // (solo las que asoman)
+			for (int vuelta = 0; vuelta < 4; vuelta++) {
+				bool pisa = false;
+				for (const glm::vec4& o : *puestas) pisa = pisa || (x < o.z + 4.0f * s && x + w > o.x - 4.0f * s && y < o.w + 3.0f * s && y + h > o.y - 3.0f * s);
+				if (!pisa) break;
+				y -= h + 6.0f * s;
+			}
+			puestas->push_back(glm::vec4(x, y, x + w, y + h));
+		}
 		caja(x, y, w, h, 10.0f * s, PANEL, glm::vec4(0.02f, 0.03f, 0.06f, 0.7f), col, 15.0f * s, glm::vec4(1.2f * s, 0.8f, 0.0f, 8.0f * s));
 		texto(F_TITULO, titulo, x + 13.0f * s, y + 20.0f * s, tt, glm::vec4(glm::vec3(col), 1.0f), NADA, glm::vec3(0.0f), 0, 2.0f);
 		texto(F_NUMEROS, numero, x + w - 12.0f * s, y + 22.0f * s, tn, BLANCO, col, glm::vec3(0.5f, 0.0f, 0.0f), 2);
@@ -1653,6 +1672,8 @@ private:
 
 	void dibujarEtiquetasTablero()
 	{
+		if (entrada::estado().activa) return;   // (rama classic-visual-final: no flotan sobre la figura de la entrada clave)
+		std::vector<glm::vec4> puestas;
 		for (int i = 0; i < (int)NUM_ZONAS; i++) {
 			const std::string tipo = ZONAS[i].tipo;
 			if (tipo != "mazo" && tipo != "fusion" && tipo != "cementerio" && tipo != "desterrado") continue;
@@ -1676,7 +1697,7 @@ private:
 				titulo = "CEMENTERIO";
 				numero = std::to_string(rival ? cementerioR : cementerioJ);
 			}
-			etiqueta(p, titulo, numero, c);
+			etiqueta(p, titulo, numero, c, &puestas);
 		}
 	}
 
@@ -2583,14 +2604,22 @@ private:
 	void dibujarBotonFase()
 	{
 		const char* txt = ctl->botonFase();
-		if (!txt || !*txt) return;
+		if (!txt || !*txt || entrada::estado().activa) return;   // (classic-visual-final: la placa de la entrada clave va abajo)
 		const bool fin = strcmp(txt, "Terminar turno") == 0;
 		const std::string titulo = idioma::tr(fin ? "TERMINAR TURNO" : "SIGUIENTE FASE");
 		const std::string sub = fin ? std::string(idioma::tr("Le toca al rival")) : std::string(idioma::tr(txt));
 		const float r = 20.0f * s, h = 74.0f * s;
 		const float tw = glm::max(medir(F_NUMEROS, titulo, 24.0f * s, 2.0f), medir(F_TITULO, sub, 19.0f * s, 1.0f));
 		const float w = tw + 2.0f * r + 64.0f * s;
-		const float x0 = W - 22.0f * s - w, y0 = H - 22.0f * s - 42.0f * s - 16.0f * s - h - 54.0f * s;
+		// (rama classic-visual-final) siempre encima de la pila de la barra de ayuda, la tenga en 1, 2 o 3 filas
+		const float x0 = W - 22.0f * s - w;
+		float y0 = glm::min(topeAyuda(planAyuda()), H - 22.0f * s - 42.0f * s) - 16.0f * s - h;
+		for (int k = 0; k < nManoJ(); k++) {   // (y sin pisar las cartas de la mano que quedan debajo)
+			glm::vec2 c;
+			float an, e;
+			cartaManoJ(k, c, an, e);
+			if (c.x + 80.0f * s > x0) y0 = glm::min(y0, c.y + e * 70.0f * s - 115.0f * s - 12.0f * s - h);   // (sin la elevacion: no salta)
+		}
 		const float lat = 0.75f + 0.25f * sinf(t * 3.0f);
 		const glm::vec4 borde = fin ? CARMESI : ORO;
 		usar(setAtlas, false);
@@ -2962,20 +2991,21 @@ private:
 
 	// barra de ayuda: los botones que sirven ahora (control::Mando::ayuda), abajo a la derecha, en pastillas de vidrio;
 	// si no entran al lado de la mano del jugador se apilan en filas hacia arriba
-	void dibujarAyudaMando()
-	{
-		if (consultaAbierta()) return;   // (rama classic-duelo-ui: el panel trae sus botones)
-		const auto items = ctl->ayuda();
-		if (items.empty()) return;
-		const float h = 42.0f * s, r = 14.0f * s, tt = 19.0f * s, sep = 22.0f * s, pad = 16.0f * s;
+	// rama classic-visual-final: como se reparte la barra de ayuda (filas de abajo hacia arriba, a la derecha de la mano
+	// del jugador). Si con la mano ancha no entra en 3 filas, se achican letra y separaciones (hasta 80%) para que la
+	// pila no suba hasta el mazo; el boton SIGUIENTE FASE va siempre encima de la pila (topeAyuda), nunca encima de ella
+	struct PlanAyuda {
+		std::vector<std::pair<std::string, std::string>> items;
 		std::vector<float> ancho;
-		for (const auto& it : items) {
-			float wi = 2.0f * r;
-			if (it.first != "X" && it.first != "O" && it.first != "T" && it.first != "C" && it.first != "CRUZ" && it.first != "STICK_R") {
-				wi = medir(F_NUMEROS, it.first == "L1R1" ? "L1 R1" : it.first, 14.0f * s, 1.0f) + 14.0f * s;
-			}
-			ancho.push_back(wi + 8.0f * s + medir(F_TITULO, it.second, tt, 1.0f));
-		}
+		std::vector<std::vector<int>> filas;
+		float h{ 0 }, r{ 0 }, tt{ 0 }, sep{ 0 }, pad{ 0 };
+	};
+	PlanAyuda planAyuda()
+	{
+		PlanAyuda pl;
+		if (!ctl || consultaAbierta()) return pl;   // (rama classic-duelo-ui: el panel trae sus botones)
+		for (const auto& it : ctl->ayuda()) pl.items.emplace_back(it.first, it.second);
+		if (pl.items.empty()) return pl;
 		// borde derecho de la mano del jugador (la barra no la tapa)
 		float manoDer = CAMPO_X * s;
 		for (int k = 0; k < nManoJ(); k++) {
@@ -2985,19 +3015,54 @@ private:
 			manoDer = glm::max(manoDer, c.x + 75.0f * s * e + 12.0f * s);
 		}
 		const float derecha = W - 22.0f * s;
-		const float disponible = glm::max(derecha - manoDer - 2.0f * pad, 260.0f * s);
-		// filas (de abajo hacia arriba, cada una alineada a la derecha)
-		std::vector<std::vector<int>> filas(1);
-		float usado = 0.0f;
-		for (int i = 0; i < (int)items.size(); i++) {
-			const float wi = ancho[i] + (filas.back().empty() ? 0.0f : sep);
-			if (!filas.back().empty() && usado + wi > disponible) {
-				filas.emplace_back();
-				usado = 0.0f;
+		for (float k = 1.0f; k >= 0.79f; k -= 0.05f) {
+			pl.h = 42.0f * s * glm::max(k, 0.9f);
+			pl.r = 14.0f * s;
+			pl.tt = 19.0f * s * k;
+			pl.sep = 22.0f * s * k;
+			pl.pad = 16.0f * s * k;
+			pl.ancho.clear();
+			for (const auto& it : pl.items) {
+				float wi = 2.0f * pl.r;
+				if (it.first != "X" && it.first != "O" && it.first != "T" && it.first != "C" && it.first != "CRUZ" && it.first != "STICK_R") {
+					wi = medir(F_NUMEROS, it.first == "L1R1" ? "L1 R1" : it.first, 14.0f * s, 1.0f) + 14.0f * s;
+				}
+				pl.ancho.push_back(wi + 8.0f * s + medir(F_TITULO, it.second, pl.tt, 1.0f));
 			}
-			usado += ancho[i] + (filas.back().empty() ? 0.0f : sep);
-			filas.back().push_back(i);
+			const float disponible = glm::max(derecha - manoDer - 2.0f * pl.pad, 260.0f * s);
+			pl.filas.assign(1, {});
+			float usado = 0.0f;
+			for (int i = 0; i < (int)pl.items.size(); i++) {
+				const float wi = pl.ancho[i] + (pl.filas.back().empty() ? 0.0f : pl.sep);
+				if (!pl.filas.back().empty() && usado + wi > disponible) {
+					pl.filas.emplace_back();
+					usado = 0.0f;
+				}
+				usado += pl.ancho[i] + (pl.filas.back().empty() ? 0.0f : pl.sep);
+				pl.filas.back().push_back(i);
+			}
+			if (pl.filas.size() <= 3) break;
 		}
+		return pl;
+	}
+	// la y de arriba de la barra de ayuda (H - 22 si no hay barra)
+	float topeAyuda(const PlanAyuda& pl) const
+	{
+		const float abajo = H - 22.0f * s;
+		if (pl.items.empty()) return abajo;
+		return abajo - (float)pl.filas.size() * pl.h - (float)(pl.filas.size() - 1) * 8.0f * s;
+	}
+
+	void dibujarAyudaMando()
+	{
+		if (entrada::estado().activa) return;   // (classic-visual-final: la entrada clave trae su ayuda: R2 Saltar)
+		const PlanAyuda pl = planAyuda();
+		if (pl.items.empty()) return;
+		const float derecha = W - 22.0f * s;
+		const float h = pl.h, r = pl.r, tt = pl.tt, sep = pl.sep, pad = pl.pad;
+		const auto& items = pl.items;
+		const auto& ancho = pl.ancho;
+		const auto& filas = pl.filas;
 		usar(setAtlas, false);
 		float y = H - 22.0f * s - h;
 		for (int f = (int)filas.size() - 1; f >= 0; f--) {
@@ -3010,7 +3075,7 @@ private:
 			for (size_t j = 0; j < filas[f].size(); j++) {
 				const auto& it = items[filas[f][j]];
 				const float wi = iconoBoton(glm::vec2(x + r, y + h * 0.5f), it.first, r);
-				texto(F_TITULO, it.second, x + wi + 8.0f * s, y + h * 0.5f + 7.0f * s, tt, glm::vec4(0.88f, 0.92f, 0.98f, 1.0f), NADA, glm::vec3(0.0f), 0, 1.0f);
+				texto(F_TITULO, it.second, x + wi + 8.0f * s, y + h * 0.5f + tt * 0.37f, tt, glm::vec4(0.88f, 0.92f, 0.98f, 1.0f), NADA, glm::vec3(0.0f), 0, 1.0f);
 				x += ancho[filas[f][j]] + sep;
 			}
 			y -= h + 8.0f * s;

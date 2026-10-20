@@ -2,9 +2,9 @@
 // Lo que se ve de la consulta del duelo (duelo_visores.h; lo lleva el juego en duelo_consulta.h):
 //  - dibujarConsulta(): el panel de pestannas (REGISTRO, CEMENTERIO, DESTERRADAS, EXTRA) con la lista que se recorre a
 //    la izquierda y la carta elegida a la derecha; abajo, sus botones.
-//  - dibujarCadenaPila(): la pila de la cadena a la derecha de la mesa: C1 abajo, el ultimo eslabon arriba; cada uno
+//  - dibujarCadenaPila(): la pila de la cadena arriba a la izquierda de la mesa: C1 a la izquierda, el ultimo encima; cada uno
 //    con su carta, su numero y el color de su duenno. Se resuelve de arriba hacia abajo: el eslabon que resuelve se
-//    ilumina y sale hacia un costado.
+//    ilumina y sale hacia arriba.
 //  - dibujarJugablesMesa() / brilloJugableMano(): el brillo azul de Master Duel en lo que se puede jugar o activar.
 // Textos: idioma::t(es, en) en el lugar (sin tocar la tabla de idioma.h).
 
@@ -53,12 +53,17 @@ private:
 		const cadena::Pila& p = consulta_->pila;
 		if (p.v.empty()) return;
 		const int n = (int)p.v.size();
-		const glm::vec2 tam = glm::vec2(118.0f, 172.0f) * s;
-		const float x = W - 118.0f * s, paso = glm::min(150.0f * s, (H * 0.56f) / (float)glm::max(n, 1));
-		const float yBase = H * 0.66f;   // C1 (abajo); los demas suben
-		const float titulo = yBase - paso * (float)(n - 1) - tam.y * 0.5f - 30.0f * s;
+		// rama classic-visual-final: en fila, en el cielo libre entre la columna de fases y la mano del rival (arriba a la
+		// izquierda de la mesa): entera en 16:9, sin tapar las etiquetas de la mesa ni el retrato del rival (arriba a la
+		// derecha). C1 a la izquierda; cada eslabon nuevo encima, a su derecha (su ficha C<n> queda a la vista)
+		const glm::vec2 tam = glm::vec2(100.0f, 146.0f) * s;
+		const float medio = (CAMPO_X + 228.0f) * s, ancho = 300.0f * s;
+		const float paso = n > 1 ? glm::min(115.0f * s, ancho / (float)(n - 1)) : 0.0f;
+		const float x0 = medio - paso * (float)(n - 1) * 0.5f, yBase = 300.0f * s;
 		usar(setAtlas, false);
-		texto(F_NUMEROS, idioma::t("CADENA", "CHAIN"), x, titulo, 22.0f * s, BLANCO, ORO, glm::vec3(0.4f, 0.0f, 0.6f), 1, 3.0f);
+		caja(medio - 70.0f * s, yBase - tam.y * 0.5f - 52.0f * s, 140.0f * s, 34.0f * s, 6.0f * s, PANEL, glm::vec4(0.02f, 0.03f, 0.06f, 0.8f), glm::vec4(glm::vec3(ORO) * 0.8f, 1.0f),
+		     17.0f * s, glm::vec4(1.2f * s, 0.8f, 0.0f, 8.0f * s));
+		texto(F_NUMEROS, idioma::t("CADENA", "CHAIN"), medio, yBase - tam.y * 0.5f - 27.0f * s, 22.0f * s, BLANCO, ORO, glm::vec3(0.4f, 0.0f, 0.6f), 1, 3.0f);
 		for (int i = 0; i < n; i++) {
 			const cadena::Eslabon& e = p.v[(size_t)i];
 			const float entra = suave(0.0f, cadena::T_ENTRA, e.t);
@@ -66,7 +71,7 @@ private:
 			const float a = entra * (1.0f - sale);
 			if (a <= 0.01f) continue;
 			const glm::vec4 lado = e.lado ? CARMESI : CIAN;
-			glm::vec2 c(x + 90.0f * s * sale, yBase - paso * (float)i - 40.0f * s * (1.0f - entra));
+			glm::vec2 c(x0 + paso * (float)i, yBase - 70.0f * s * sale - 40.0f * s * (1.0f - entra));
 			const float esc = 0.9f + 0.1f * entra + 0.15f * sinf(glm::pi<float>() * glm::min(1.0f, sale * 1.6f));
 			const float ang = glm::radians(e.lado ? 4.0f : -4.0f) * (1.0f - entra * 0.5f);
 			auto A = [&](glm::vec4 col) { return glm::vec4(glm::vec3(col), col.a * a); };

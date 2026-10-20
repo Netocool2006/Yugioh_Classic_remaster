@@ -41,8 +41,7 @@
 					rect(ce + glm::vec2(tamM.x * 0.5f - 9.0f * s, -tamM.y * 0.5f + 9.0f * s), glm::vec2(11.0f * s), 0.0f, 0.0f, ORBE, CIAN, CIAN, 0.0f,
 					     glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
 				}
-				textoCrudo(F_TEXTO, recortar(F_TEXTO, k->nombre, 14.0f * s, cel - 8.0f * s), ce.x, ce.y + tamM.y * 0.5f + 19.0f * s, 14.0f * s,
-				           sel ? ORO : glm::vec4(0.75f, 0.8f, 0.9f, 1.0f), 1);
+				nombreCelda(F_TEXTO, k->nombre, ce.x, ce.y + tamM.y * 0.5f + 19.0f * s, 14.0f * s, cel - 8.0f * s, sel ? ORO : glm::vec4(0.75f, 0.8f, 0.9f, 1.0f));
 				if (sel) marcoCursor(ce, tamM * esc, 3.0f);
 			}
 		}

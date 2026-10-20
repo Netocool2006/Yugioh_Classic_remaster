@@ -4,6 +4,8 @@
 // desbloqueos, final), idioma ES/EN, mando y guardado. Todo con el juego sin GPU (cu_juego.h) y el mando.
 #pragma once
 
+#include <functional>
+
 #include "casos_uso.h"
 #include "cu_juego.h"
 
@@ -734,12 +736,15 @@ inline void duelo(Juego& g)
 			g.apretar(PAD_CROSS, 0.2f);
 			for (int n = 0; n < 4 && g.ctl.estado != control::NAVEGAR; n++) g.apretar(PAD_CROSS, 0.3f);
 			g.esperar(2.0f);
-			bool esta = false;
+			bool esta = false, invocada = false;
 			for (const ia::Monstruo& m : g.dueloIA.l[0].m) esta |= m.id == id && !m.bocaAbajo;
-			cu::caso("CU-FE-DUELO-INVOCAR", esta, "invocar %s con el mando no la puso en el campo", id.c_str());
+			for (const ia::Suceso& x : g.dueloIA.sucesos) invocada |= x.tipo == ia::S_INVOCA && x.lado == 0 && x.carta == id;
+			// (el rival puede responder a la invocacion y sacarla del campo, p. ej. Trap Hole: entonces basta con que
+			// la invocacion se hiciera y que la mesa coincida con el duelo)
+			cu::caso("CU-FE-DUELO-INVOCAR", esta || invocada, "invocar %s con el mando no la puso en el campo", id.c_str());
 			bool enMesa = false;
 			for (int i = 0; i < ia::ZONAS; i++) enMesa |= g.ctl.zonas[(size_t)Juego::zonaMesaIA(0, i)].carta == id;
-			cu::caso("CU-FE-DUELO-INVOCAR", enMesa, "la mesa no muestra %s invocada", id.c_str());
+			cu::caso("CU-FE-DUELO-INVOCAR", enMesa == esta, "la mesa no muestra %s como el duelo (mesa %d, duelo %d)", id.c_str(), (int)enMesa, (int)esta);
 			bool anotada = false;
 			for (const registro::Linea& l : g.consulta.reg.lineas) anotada |= l.tipo == ia::S_INVOCA && l.carta == id;
 			cu::caso("CU-FE-DUELO-REGISTRO", anotada, "el registro no anoto la invocacion de %s", id.c_str());
@@ -855,6 +860,141 @@ inline void preguntarEfecto(Juego& g)
 	opciones::preguntar() = opciones::PREGUNTAR_AUTO;
 	g.esperar(0.3f);
 	cu::caso("CU-FE-OPC-PREGUNTAR-EFECTO", !g.dueloIA.preguntarSiempre[0], "con Auto el duelo sigue preguntando siempre");
+	abandonar(g);
+}
+
+// ------------------------------------------------------------------------------------------------- reglas oficiales
+// (rama classic-reglas-oficiales) lo que ve el jugador: la repeticion del ataque (elegir objetivo o no atacar, con el
+// mando) y la ventana justo despues del danno ("Recibiste daño": Attack and Receive), que respeta "Preguntar antes de activar"
+inline int ponerMonstruoCU(ia::Duelo& d, int lado, const char* id)
+{
+	const int z = d.invocarEspecial(lado, id, false);
+	if (z < 0) return z;
+	d.l[(size_t)lado].m[(size_t)z].llegoEsteTurno = false;
+	d.l[(size_t)lado].m[(size_t)z].especial = false;
+	d.ef.disparos.clear();
+	d.ef.ventanaTras = ia::Ventana{};
+	d.recalcular();
+	return z;
+}
+inline int colocarCU(ia::Duelo& d, int lado, const char* id)
+{
+	ia::Lado& x = d.l[(size_t)lado];
+	const int z = x.libreMT();
+	if (z < 0) return z;
+	x.mt[(size_t)z] = ia::MagiaTrampa{ id, true };
+	x.mt[(size_t)z].uid = d.nuevoUid();
+	x.mt[(size_t)z].turnoColocada = 1;
+	return z;
+}
+inline bool esperarQue(Juego& g, float s, const std::function<bool()>& f)
+{
+	for (float t = 0.0f; t < s; t += 0.1f) {
+		if (f()) return true;
+		g.esperar(0.1f);
+	}
+	return f();
+}
+inline void reglasOficiales(Juego& g)
+{
+	irARivales(g, VD::LIBRE);
+	g.apretar(PAD_CROSS, 0.3f);
+	sorteo(g, false);
+	if (!esperarJugador(g, 90.0f)) {
+		cu::caso("CU-FE-DUELO-REPETICION", false, "el jugador nunca quedo libre para probar la repeticion del ataque");
+		cu::caso("CU-FE-DUELO-VENTANA-DANNO", false, "el jugador nunca quedo libre para probar la ventana del danno");
+		abandonar(g);
+		return;
+	}
+	ia::Duelo& d = g.dueloIA;
+	auto mesaLimpia = [&]() {
+		for (ia::Lado& x : d.l) {
+			x.m = {};
+			x.mt = {};
+		}
+		d.l[0].mano.clear();   // (sin magias rapidas del jugador que pidan responder)
+		d.turno = std::max(d.turno, 3);
+		d.fase = ia::F_BATALLA;
+		d.ef.batallaTerminada = false;
+	};
+	auto atacar = [&](int z, int objetivo) {
+		ia::Jugada j;
+		j.tipo = ia::J_ATACAR;
+		j.zona = z;
+		j.objetivo = objetivo;
+		return d.aplicar(j);
+	};
+	// 1) la repeticion: Summoned Skull ataca directo y el rival responde con Scapegoat
+	mesaLimpia();
+	const int a = ponerMonstruoCU(d, 0, "summoned_skull");
+	const int sg = colocarCU(d, 1, "scapegoat");
+	bool ok = atacar(a, -1);
+	if (ok && d.ef.preg.tipo == ia::P_RESPUESTA && d.ef.preg.lado == 1) ok = d.aplicar(ia::jugadaActivar({ 1, ia::EN_MT, sg }));
+	const bool pregunta = ok && d.ef.preg.tipo == ia::P_ELEGIR && d.ef.repeticion.hay && d.ef.preg.lado == 0;
+	cu::caso("CU-FE-DUELO-REPETICION", pregunta, "Scapegoat tras el ataque directo no dejo la repeticion al jugador (pregunta %d)", d.ef.preg.tipo);
+	const bool foco = esperarQue(g, 6.0f, [&]() { return g.ctl.estado == control::ELEGIR_CARTA && g.ctl.eleccionDuelo; });
+	cu::caso("CU-FE-DUELO-REPETICION", pregunta && foco, "la repeticion no se mostro como eleccion con el foco (estado %d)", (int)g.ctl.estado);
+	if (foco) {
+		g.apretar(PAD_CIRCLE, 0.3f);   // (circulo: no atacar)
+		cu::caso("CU-FE-DUELO-REPETICION", !d.ef.repeticion.hay && d.l[1].monstruos() == 4 && d.l[1].lp == ia::LP_INICIAL && d.puedeAtacar(0, a),
+		         "circulo no fue 'no atacar' (repeticion %d, fichas %d, puede atacar %d)", (int)d.ef.repeticion.hay, d.l[1].monstruos(), (int)d.puedeAtacar(0, a));
+	}
+	// 1b) con el ataque directo entre las opciones: la lista con "Ataque directo" y "No atacar"
+	mesaLimpia();
+	const int a2 = ponerMonstruoCU(d, 0, "summoned_skull");
+	const int cg = ponerMonstruoCU(d, 1, "celtic_guardian");
+	d.preguntarSiempre[1] = true;   // (el rival tiene su ventana tras la declaracion)
+	atacar(a2, cg);
+	d.alCementerio(1, cg);
+	d.preguntarSiempre[1] = false;
+	for (int k = 0; k < 6 && d.ef.preg.tipo == ia::P_RESPUESTA && d.ef.preg.lado == 1; k++) {
+		ia::Jugada p;
+		p.tipo = ia::J_PASAR;
+		d.aplicar(p);
+	}
+	const bool lista = esperarQue(g, 6.0f, [&]() { return g.ctl.estado == control::MENU && g.ctl.eleccionDuelo && g.ctl.opciones.size() == 2; });
+	cu::caso("CU-FE-DUELO-REPETICION", lista && g.ctl.opciones[0].texto == "Ataque directo" && g.ctl.opciones[1].texto == "No atacar",
+	         "la repeticion sin monstruos no ofrece 'Ataque directo' y 'No atacar' (estado %d, %d opciones)", (int)g.ctl.estado, (int)g.ctl.opciones.size());
+	if (lista) {
+		const int lp = d.l[1].lp;
+		g.ctl.opcion = 0;
+		g.apretar(PAD_CROSS, 0.3f);
+		esperarQue(g, 6.0f, [&]() { return d.l[1].lp < lp || d.ganador >= 0; });
+		cu::caso("CU-FE-DUELO-REPETICION", d.l[1].lp == std::max(0, lp - 2500), "elegir 'Ataque directo' no hizo el danno (LP %d -> %d)", lp, d.l[1].lp);
+	}
+	if (d.ganador >= 0) return;
+	// 2) la ventana del danno: el jugador ataca a un Blue-Eyes, recibe 500 y tiene Attack and Receive
+	for (int modo : { opciones::PREGUNTAR_AUTO, opciones::PREGUNTAR_NUNCA }) {
+		opciones::preguntar() = modo;
+		g.esperar(0.3f);
+		esperarQue(g, 6.0f, [&]() { return !d.ocupado() && !g.ctl.bloqueado; });
+		mesaLimpia();
+		const int s = ponerMonstruoCU(d, 0, "summoned_skull");
+		const int be = ponerMonstruoCU(d, 1, "blue_eyes");
+		const int ar = colocarCU(d, 0, "attack_and_receive");
+		const int lp0 = d.l[0].lp, lp1 = d.l[1].lp;
+		atacar(s, be);
+		const bool ventana = d.ef.ventana.tipo == ia::V_DANNO && d.ef.preg.tipo == ia::P_RESPUESTA && d.ef.preg.lado == 0 && d.l[0].lp == lp0 - 500;
+		if (modo == opciones::PREGUNTAR_AUTO) {
+			cu::caso("CU-FE-DUELO-VENTANA-DANNO", ventana, "tras recibir danno de batalla no se abrio la ventana del jugador (ventana %d, pregunta %d lado %d)", d.ef.ventana.tipo, d.ef.preg.tipo, d.ef.preg.lado);
+			const bool menu = esperarQue(g, 6.0f, [&]() { return g.ctl.estado == control::MENU && g.ctl.enPregunta && !g.ctl.eleccionDuelo; });
+			cu::caso("CU-FE-DUELO-VENTANA-DANNO", menu && g.ctl.tituloTexto == idioma::tr("Recibiste daño") && !g.ctl.opciones.empty() && g.ctl.opciones[0].accion == control::AC_ACTIVAR_EFECTO,
+			         "la pregunta tras el danno no dice 'Recibiste daño' con Attack and Receive (estado %d, titulo '%s')", (int)g.ctl.estado, g.ctl.tituloTexto.c_str());
+			if (menu) {
+				g.ctl.opcion = 0;
+				g.apretar(PAD_CROSS, 0.3f);
+				esperarQue(g, 8.0f, [&]() { return d.l[1].lp < lp1; });
+				cu::caso("CU-FE-DUELO-VENTANA-DANNO", d.l[1].lp == lp1 - 700, "Attack and Receive desde la pregunta no hizo 700 (LP %d -> %d)", lp1, d.l[1].lp);
+			}
+		} else {
+			esperarQue(g, 6.0f, [&]() { return !(d.ef.preg.tipo == ia::P_RESPUESTA && d.ef.preg.lado == 0); });
+			cu::caso("CU-FE-DUELO-VENTANA-DANNO", !(d.ef.preg.tipo == ia::P_RESPUESTA && d.ef.preg.lado == 0) && !d.l[0].mt[(size_t)ar].vacia() && d.l[0].mt[(size_t)ar].bocaAbajo,
+			         "con Nunca el duelo se detuvo en la ventana del danno o activo la trampa");
+		}
+		(void)ventana;
+	}
+	opciones::preguntar() = opciones::PREGUNTAR_AUTO;
+	g.esperar(0.3f);
 	abandonar(g);
 }
 

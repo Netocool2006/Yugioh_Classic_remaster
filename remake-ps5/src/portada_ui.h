@@ -172,8 +172,17 @@ private:
 		if (aTxt > 0.0f) {
 			const float parpadeo = 0.35f + 0.65f * (0.5f + 0.5f * cosf(vd.t * 3.6f));
 			caja(0.0f, H * 0.86f, W, H * 0.14f, 0.0f, PANEL, glm::vec4(0.0f, 0.0f, 0.0f, 0.55f * aTxt), NADA, 0.0f, glm::vec4(0.0f));
-			texto(F_NUMEROS, "Pulsa X para comenzar", W * 0.5f, H * 0.93f + 14.0f * s, 46.0f * s, glm::vec4(1.0f, 0.95f, 0.82f, aTxt * parpadeo),
-			      glm::vec4(glm::vec3(ORO), aTxt * parpadeo), glm::vec3(0.6f, 0.0f, 0.8f), 1, 2.0f);
+			// (rama classic-visual-final) placa oscura fija detras, sombra y contorno: se lee sobre cualquier parte del arte;
+			// el pulso queda en el texto y en el brillo del borde de la placa
+			const std::string txt = idioma::tr("Pulsa X para comenzar");
+			const float tam = 46.0f * s, tw = medir(F_NUMEROS, txt, tam, 2.0f), pw = tw + 110.0f * s, ph = 78.0f * s;
+			const float cy = H * 0.93f;
+			caja(W * 0.5f - pw * 0.5f, cy - ph * 0.5f, pw, ph, 18.0f * s, PANEL, glm::vec4(0.02f, 0.015f, 0.03f, 0.88f * aTxt),
+			     glm::vec4(glm::vec3(ORO) * (0.45f + 0.55f * parpadeo), aTxt), ph * 0.5f, glm::vec4(1.6f * s, 1.0f + parpadeo, 0.0f, 16.0f * s));
+			const float vis = 0.55f + 0.45f * parpadeo;
+			texto(F_NUMEROS, txt, W * 0.5f + 3.0f * s, cy + 14.0f * s + 4.0f * s, tam, glm::vec4(0.0f, 0.0f, 0.0f, 0.85f * aTxt * vis), NADA, glm::vec3(0.0f), 1, 2.0f);
+			texto(F_NUMEROS, txt, W * 0.5f, cy + 14.0f * s, tam, glm::vec4(1.0f, 0.96f, 0.84f, aTxt * vis), glm::vec4(glm::vec3(ORO), aTxt * vis),
+			      glm::vec3(0.5f, 0.16f, 0.5f), 1, 2.0f);
 		}
 		// fundido desde negro al entrar y a negro al salir
 		const float negro = std::max(portadaNegro, 1.0f - suave(0.0f, 1.2f, vd.t));

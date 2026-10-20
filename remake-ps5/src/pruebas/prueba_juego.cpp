@@ -59,6 +59,7 @@ struct Juego {
 		int lps[2]{ 8000, 8000 };
 		std::string nombreCarta(const std::string& id) const { return id; }
 		void cambiarLP(bool rival, int v) { lps[rival ? 1 : 0] = v; }
+		void fijarLP(bool rival, int v) { lps[rival ? 1 : 0] = v; }   // (rama classic-visual-final)
 		int lp(bool rival) const { return lps[rival ? 1 : 0]; }
 		int mazos[3]{ -1, -1, -1 };   // (rama classic-duelo-ui: los contadores de la mesa)
 		void contarMazos(int j, int r, int f) { mazos[0] = j, mazos[1] = r, mazos[2] = f; }

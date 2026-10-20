@@ -29,6 +29,7 @@
 	// entrada_clave_juego.h (rama classic-cartas-clave): ninguna carta es clave
 	float empezarEntradaClave(const std::string&, int, int) { return 0.0f; }
 	void avanzarEntradaClave(float) {}
+	void pruebaCartaClave(float) {}   // (rama classic-visual-final: YUGI_CARTA_CLAVE, solo PC)
 	// menu_principal.h y portada.h (ramas classic-menus y classic-portada): solo cambia de pantalla
 	struct { bool enOpciones{ false }; int opcionOpc{ 0 }; } menuP;
 	void irAMenuPrincipal() { ctl.vista.pantalla = VD::MENU; }

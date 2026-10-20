@@ -239,6 +239,28 @@ private:
 		while (!txt.empty() && medirCrudo(fu, txt + "…", tam) > ancho) constructor::borrarUltimo(txt);
 		return txt + "…";
 	}
+	// rama classic-visual-final: el nombre bajo una carta de una rejilla (centrado en x, linea base y). Si no entra en una
+	// linea, va en 2 lineas (achicando la letra hasta 72%); solo si ni asi entra, la 2a linea termina en "…"
+	void nombreCelda(int fu, const std::string& txt, float x, float y, float tam, float ancho, glm::vec4 col)
+	{
+		if (medirCrudo(fu, txt, tam) <= ancho) {
+			textoCrudo(fu, txt, x, y, tam, col, 1);
+			return;
+		}
+		for (float t2 = tam * 0.92f;; t2 -= 0.5f * s) {
+			std::vector<std::string> l = cortarLineasCrudo(fu, txt, t2, ancho);
+			bool entra = l.size() <= 2;
+			for (const std::string& li : l) entra = entra && medirCrudo(fu, li, t2) <= ancho;
+			if (!entra && t2 > tam * 0.72f) continue;
+			if (l.size() > 2) {
+				for (size_t i = 2; i < l.size(); i++) l[1] += " " + l[i];
+				l.resize(2);
+			}
+			const float y0 = y - (l.size() > 1 ? t2 * 0.22f : 0.0f);
+			for (size_t i = 0; i < l.size(); i++) textoCrudo(fu, recortar(fu, l[i], t2, ancho), x, y0 + (float)i * t2 * 1.02f, t2, col, 1);
+			return;
+		}
+	}
 	// lineas de un parrafo cortado por palabras (para desplazar el texto de la carta)
 	std::vector<std::string> cortarLineasCrudo(int fu, const std::string& txt, float tam, float ancho)
 	{
@@ -663,8 +685,7 @@ private:
 					textoCrudo(F_NUMEROS, nn, bx + w * 0.5f, by + h * 0.5f + 5.0f * s, 15.0f * s, enMazo > 0 ? ORO : BLANCO, 1);
 				}
 				// el nombre debajo
-				textoCrudo(F_TEXTO, recortar(F_TEXTO, mc.nombre, 14.0f * s, cel - 6.0f * s), ce.x, ce.y + tamM.y * 0.5f + 18.0f * s, 14.0f * s,
-				           sel ? ORO : glm::vec4(0.75f, 0.8f, 0.9f, 1.0f), 1);
+				nombreCelda(F_TEXTO, mc.nombre, ce.x, ce.y + tamM.y * 0.5f + 18.0f * s, 14.0f * s, cel - 6.0f * s, sel ? ORO : glm::vec4(0.75f, 0.8f, 0.9f, 1.0f));
 				if (sel) marcoCursor(ce, tamM * esc, 3.0f);
 			}
 			if (c.lista.empty())

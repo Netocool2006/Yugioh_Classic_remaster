@@ -148,8 +148,8 @@ prueba_certificacion.cpp quedaron sin esas cartas.
 - **Reaper on the Nightmare**: ataque directo: el rival descarta 1 al azar; se destruye al ser elegido por un efecto.
 - **Ventanas**: fase de espera (`V_ESPERA`, solo si alguien tiene una carta de ese momento: Curse of Fiend, Thunder of
   Ruler, Aqua Spirit), final de la batalla (`V_FIN_BATALLA`), al colocar un monstruo (`V_COLOCADO`: Shadow of Eyes) y
-  repeticion del ataque (si cambia el numero de monstruos del rival y el ataque no sigue, el atacante puede volver a
-  atacar; atajo: si su objetivo sigue, el ataque sigue).
+  repeticion del ataque (si cambia el numero de monstruos del rival, el atacante elige otro objetivo, el mismo o no
+  atacar; si no ataca, puede volver a atacar en esa fase: regla oficial, rama classic-reglas-oficiales).
 - **Dudosas corregidas**: Penalty Game (eliges el efecto), Thunder of Ruler (solo en la espera del rival: sin fase de
   batalla), Shadow of Eyes, D.D. Borderline (sin fase de batalla), Weather Report (segunda fase de batalla), Goddess of
   Whim (moneda cantada; Abare Ushioni, Fairy Box, Fiend Comedian, Kryuel y Gamble ya la cantaban: tanda 7aq), Gatling
@@ -209,8 +209,9 @@ Errores del motor que aparecieron y se arreglaron en ia.h:
 - **Malice Doll of Demise** no volvia si la sacrificaba Ectoplasmer (una magia continua, fuera de la cadena).
 
 Aproximaciones que quedan (anotadas, no cambian el resultado del caso):
-- *Inferno Tempest*: no hay ventana de respuesta justo despues del danno de batalla; se puede activar en cualquier
-  ventana del mismo turno (por ejemplo, la fase final del rival).
+- ~~*Inferno Tempest*: sin ventana justo despues del danno~~: resuelto en la rama classic-reglas-oficiales. Hay una
+  ventana justo despues del danno (`V_DANNO`) solo para el que lo recibio; Inferno Tempest, Attack and Receive y
+  Numinous Healer solo se activan ahi (casos CU-BE-ATAJO-INFERNO-TEMPEST-MOMENTO y CU-BE-VENTANA-DANNO-*).
 - *Fairy Guardian* devuelve la ultima magia de tu cementerio (no comprueba cual mando el rival este turno).
 - *Pitch-Black Power Stone* pasa el contador a un monstruo tuyo que use contadores de magia (no a cualquier carta).
 - *Level Conversion Lab* elige el monstruo de la mano de mas nivel.

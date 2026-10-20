@@ -77,7 +77,7 @@ astral_barrier;Astral Barrier;Trampa (continua);trampa_continua;-;OK;1;0;SIN PRU
 asura_priest;Asura Priest;Monstruo (espiritu);espiritu;a_la_mano;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;4;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 aswan_apparition;Aswan Apparition;Monstruo (efecto);efecto;quemar+al_mazo;OK;1;0;OK;ataca;al_mazo;5;0;caso a mano + plantilla;
 atomic_firefly;Atomic Firefly;Monstruo (efecto);efecto;-;OK;2;0;SIN PRUEBA;en el campo (efecto continuo);-;7;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
-attack_and_receive;Attack and Receive;Trampa (normal);trampa_normal;quemar;OK;1;0;SIN PRUEBA;;;4;0;caso a mano;no se activo en ningun contexto armado (colocada (tu fase principal): ef.no_condicion)
+attack_and_receive;Attack and Receive;Trampa (normal);trampa_normal;quemar;OK;1;0;OK;responde a un ataque directo;quemar danno 700;5;0;caso a mano + plantilla;
 aussa_the_earth_charmer;Aussa the Earth Charmer;Monstruo (volteo);volteo;control;OK;1;0;SIN PRUEBA;volteo;-;7;0;caso a mano;no concluyente: se activa (volteo) pero su efecto no se ve en el escenario generico
 autonomous_action_unit;Autonomous Action Unit;Magia (equipo);magia_equipo;destruir+invocar+equipar;OK;1;0;OK;de la mano (tu fase principal);invocar+equipar+pierde_lp;3;0;caso a mano + plantilla;
 avatar_of_the_pot;Avatar of The Pot;Monstruo (efecto);efecto;robar;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;4;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
@@ -728,7 +728,7 @@ magic_cylinder;Magic Cylinder;Trampa (normal);trampa_normal;quemar+negar;OK;1;0;
 magic_drain;Magic Drain;Trampa (contraataque);trampa_contraataque;destruir+negar+descartar;OK;1;0;OK;responde a una activacion;negar;4;0;caso a mano + plantilla;
 magic_jammer;Magic Jammer;Trampa (contraataque);trampa_contraataque;destruir+negar+descartar;OK;1;0;OK;responde a una activacion;negar+descartar;3;0;caso a mano + plantilla;
 magic_reflector;Magic Reflector;Magia (normal);magia_normal;-;OK;1;0;SIN PRUEBA;;;2;0;caso a mano;no se activo en ningun contexto armado (de la mano (tu fase principal): ef.sin_objetivo)
-magical_hats;Magical Hats;Trampa (normal);trampa_normal;invocar+posicion;OK;1;0;OK;responde a un ataque;invocar+posicion;2;0;caso a mano + plantilla;
+magical_hats;Magical Hats;Trampa (normal);trampa_normal;invocar+posicion;OK;1;0;OK;responde a un ataque;destruir+invocar+posicion;2;0;caso a mano + plantilla;
 magical_labyrinth;Magical Labyrinth;Magia (equipo);magia_equipo;invocar+equipar;OK;1;0;SIN PRUEBA;;;1;0;caso a mano;no se activo en ningun contexto armado (de la mano (tu fase principal): ef.sin_objetivo)
 magical_marionette;Magical Marionette;Monstruo (efecto);efecto;destruir+atk_def;OK;1;0;SIN PRUEBA;en el campo (efecto continuo);-;10;0;caso a mano;no concluyente: se activa (en el campo (efecto continuo)) pero su efecto no se ve en el escenario generico
 magical_merchant;Magical Merchant;Monstruo (volteo);volteo;-;OK;1;0;OK;volteo;buscar;2;0;caso a mano + plantilla;
@@ -878,7 +878,7 @@ non_aggression_area;Non Aggression Area;Trampa (normal);trampa_normal;invocar+de
 non_spellcasting_area;Non-Spellcasting Area;Magia (continua);magia_continua;-;OK;1;0;SIN PRUEBA;de la mano (tu fase principal);-;7;0;caso a mano;se activa, pero el texto no tiene una expectativa medible y no se vio cambio
 novox_s_prayer;Novox's Prayer;Magia (ritual);magia_ritual;invocar;OK;0;0;OK;invocacion ritual;invocar;1;0;plantilla;
 nubian_guard;Nubian Guard;Monstruo (efecto);efecto;quemar+al_mazo;OK;1;0;SIN PRUEBA;ataca;-;10;0;caso a mano;no concluyente: se activa (ataca) pero su efecto no se ve en el escenario generico
-numinous_healer;Numinous Healer;Trampa (normal);trampa_normal;ganar_lp;OK;1;0;SIN PRUEBA;;;4;0;caso a mano;no se activo en ningun contexto armado (colocada (tu fase principal): ef.no_condicion)
+numinous_healer;Numinous Healer;Trampa (normal);trampa_normal;ganar_lp;OK;1;0;OK;responde a un ataque directo;ganar_lp +1000 LP;5;0;caso a mano + plantilla;
 nutrient_z;Nutrient Z;Trampa (normal);trampa_normal;ganar_lp;OK;2;0;SIN PRUEBA;;;2;0;caso a mano;no se activo en ningun contexto armado (colocada (tu fase principal): ef.no_condicion)
 nuvia_the_wicked;Nuvia the Wicked;Monstruo (efecto);efecto;atk_def;OK;1;0;OK;en el campo (efecto continuo);atk_def;3;0;caso a mano + plantilla;
 obelisk_the_tormentor;Obelisk the Tormentor;Monstruo (efecto);efecto;destruir+negar;OK;1;0;OK;efecto de ignicion;destruir;2;0;caso a mano + plantilla;

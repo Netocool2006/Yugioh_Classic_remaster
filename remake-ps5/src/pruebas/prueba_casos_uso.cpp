@@ -119,6 +119,7 @@ int main(int argc, char** argv)
 		cuf::dialogos(*g);
 		cuf::duelo(*g);
 		cuf::preguntarEfecto(*g);
+		cuf::reglasOficiales(*g);   // (rama classic-reglas-oficiales)
 		cuf::resultadoPantalla(*g);
 		cuf::idiomaTodo(*g);
 		cuf::mando();

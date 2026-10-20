@@ -200,7 +200,7 @@ public:
 				if (indice.count(c[0])) continue;
 				Carta k;
 				k.id = c[0]; k.nombre = c[1]; k.clase = c[2]; k.atributo = c[3]; k.raza = c[4];
-				k.nivel = atoi(c[5].c_str()); k.atk = atoi(c[6].c_str()); k.def = atoi(c[7].c_str()); k.texto = c[8];
+				k.nivel = atoi(c[5].c_str()); k.atk = atoi(c[6].c_str()); k.def = atoi(c[7].c_str()); k.texto = idioma::reglasEs(c[8]);   // (rama classic-visual-final)
 				k.inicial = inicialDe(k.nombre);
 				k.atributoClave = k.atributo;
 				k.razaClave = k.raza;

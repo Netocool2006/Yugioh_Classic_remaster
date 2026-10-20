@@ -172,6 +172,10 @@ fallas que necesitan una decisión del usuario están en `docs/decisiones_pendie
 - `CU-FE-DUELO-CAMPO-ACTIVAR`: activar la magia de campo
 - `CU-FE-DUELO-ELEGIR-OBJETIVO`: elegir objetivo o carta con el foco o la lista
 - `CU-FE-DUELO-PREGUNTAS`: las preguntas del duelo (responder con una trampa o no; elegir al resolver)
+- `CU-FE-DUELO-REPETICION`: la repetición del ataque llega al jugador: elegir con el foco (círculo: no atacar) o con la
+  lista ("Ataque directo", "No atacar")
+- `CU-FE-DUELO-VENTANA-DANNO`: tras recibir daño, la pregunta "Recibiste daño" ofrece Attack and Receive; con
+  "Preguntar antes de activar" = Nunca el duelo no se detiene
 - `CU-FE-DUELO-JUGABLES`: lo que se puede jugar brilla, y nada más
 - `CU-FE-DUELO-COMPLETO-MANDO`: duelos enteros solo con el mando, sin cuelgues
 
@@ -318,7 +322,19 @@ fallas que necesitan una decisión del usuario están en `docs/decisiones_pendie
 - `CU-BE-BATALLA-DIRECTO`: ataque directo solo con el campo rival vacío
 - `CU-BE-BATALLA-DEFENSA-NO-ATACA`: en defensa no se ataca
 - `CU-BE-BATALLA-UN-ATAQUE`: un ataque por monstruo
-- `CU-BE-REPETICION-ATAQUE`: si cambia el número de monstruos del rival, la repetición del ataque
+- `CU-BE-REPETICION-ATAQUE`: si cambia el número de monstruos del rival, la repetición del ataque: el atacante elige
+  (pregunta del motor); "no atacar" deja al monstruo volver a atacar en esa fase; sin cambio (Waboku) el ataque sigue
+- `CU-BE-REPETICION-ATAQUE-ELEGIR`: en la repetición se elige otro objetivo o el mismo (el de antes va primero)
+- `CU-BE-REPETICION-ATAQUE-DIRECTO`: ante un ataque directo aparecen monstruos: hay repetición sin ataque directo; si
+  el objetivo se va y el campo queda vacío, la repetición ofrece el ataque directo
+- `CU-BE-REPETICION-ATAQUE-IA`: la IA clásica y la humana responden la repetición con su política de ataque (letal:
+  ataca; suicida: no ataca)
+- `CU-BE-VENTANA-DANNO`: justo después del daño se abre una ventana solo para el que lo recibió y solo si tiene una
+  carta "cuando recibes daño"; sin esa carta no se abre nada
+- `CU-BE-VENTANA-DANNO-ATTACK-RECEIVE`: Attack and Receive en esa ventana (daño de batalla); el rival recibe 700 y tiene
+  su propia ventana; después ya no se puede activar
+- `CU-BE-VENTANA-DANNO-NUMINOUS`: Numinous Healer en esa ventana (daño de efecto, Hinotama); después ya no
+- `CU-BE-VENTANA-DANNO-IA`: la IA clásica y la humana usan su carta en esa ventana
 
 #### Condiciones de victoria
 - `CU-BE-VICTORIA-LP`: LP a 0
@@ -326,13 +342,12 @@ fallas que necesitan una decisión del usuario están en `docs/decisiones_pendie
 - `CU-BE-VICTORIA-EXODIA`: las 5 piezas de Exodia
 - `CU-BE-VICTORIA-FIN`: con el duelo terminado no se juega
 
-#### Atajos conocidos (de `control_final.md`)
+#### Atajos conocidos (de `control_final.md`; todos resueltos con la regla oficial)
 - `CU-BE-ATAJO-FAIRY-GUARDIAN`: devuelve la magia que mandó el rival al cementerio este turno
 - `CU-BE-ATAJO-PITCH-BLACK`: el contador va a cualquier carta que pueda tenerlo (también del rival) y se elige
 - `CU-BE-ATAJO-LEVEL-LAB`: el monstruo de la mano lo elige quien la activa
-- `CU-BE-ATAJO-INFERNO-TEMPEST`: se puede activar tras recibir 3000 de daño de batalla
-- `CU-BE-ATAJO-INFERNO-TEMPEST-MOMENTO`: el momento exacto de la activación (DECISIÓN)
-- `CU-BE-REPETICION-ATAQUE-ELEGIR`: elegir objetivo en la repetición del ataque (DECISIÓN)
+- `CU-BE-ATAJO-INFERNO-TEMPEST`: se activa en la ventana justo después de recibir 3000+ de daño de batalla (con 1700, no)
+- `CU-BE-ATAJO-INFERNO-TEMPEST-MOMENTO`: solo en esa ventana: después (batalla, fase final) ya no se puede activar
 
 ### CU-BE-IA: el rival
 

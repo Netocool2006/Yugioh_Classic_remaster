@@ -56,6 +56,7 @@ struct Juego {
 		int lps[2]{ 8000, 8000 };
 		std::string nombreCarta(const std::string& id) const { return id; }
 		void cambiarLP(bool rival, int v) { lps[rival ? 1 : 0] = std::max(0, std::min(v, 99999)); }   // (como interfaz.h: clamp)
+		void fijarLP(bool rival, int v) { lps[rival ? 1 : 0] = v; }   // (rama classic-visual-final)
 		int lp(bool rival) const { return lps[rival ? 1 : 0]; }
 		void contarMazos(int, int, int) {}
 	} interfazDuelo;

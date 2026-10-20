@@ -101,7 +101,9 @@ private:
 	{
 		const float a = suave(0.0f, 0.25f, cosmeticos::vista().t);
 		usar(setAtlas, false);
-		caja(0.0f, 0.0f, W, H, 0.0f, PANEL, glm::vec4(0.01f, 0.0f, 0.03f, 0.80f * a), NADA, 0.0f, glm::vec4(0.0f));
+		// (rama classic-visual-final: velo casi negro y fondo opaco: el menu de Opciones de atras no se transparenta)
+		caja(0.0f, 0.0f, W, H, 0.0f, PANEL, glm::vec4(0.01f, 0.0f, 0.03f, 0.97f * a), NADA, 0.0f, glm::vec4(0.0f));
+		caja(x0, y0 + (1.0f - a) * 20.0f * s, w, h, 30.0f * s, PANEL, glm::vec4(0.02f, 0.03f, 0.06f, a), NADA, 22.0f * s, glm::vec4(0.0f));
 		caja(x0, y0 + (1.0f - a) * 20.0f * s, w, h, 30.0f * s, PANEL, glm::vec4(glm::vec3(VIDRIO), VIDRIO.a * a), glm::vec4(glm::vec3(glm::mix(CIAN, ORO, 0.55f)), a), 22.0f * s,
 		     glm::vec4(1.6f * s, 1.1f, 0.12f, 22.0f * s));
 		texto(F_NUMEROS, titulo, x0 + w * 0.5f, y0 + 66.0f * s, 38.0f * s, glm::vec4(glm::vec3(BLANCO), a), glm::vec4(glm::vec3(CIAN), a), glm::vec3(0.5f, 0.0f, 0.6f), 1, 2.0f);
@@ -164,10 +166,20 @@ private:
 		const glm::vec2 carta(230.0f * s, 333.0f * s);
 		const glm::vec2 cc(x0 + lw + (w - lw) * 0.5f, y0 + cab + carta.y * 0.5f + 10.0f * s);
 		cartaFunda(cosmeticos::fundaVisible(), cc, carta, 1.0f, a);
-		const cosmeticos::Tapete& tp = cosmeticos::TAPETES[cosmeticos::tapeteVisible()];
-		usar(setAtlas, false);
-		caja(cc.x - carta.x * 0.5f, cc.y + carta.y * 0.5f + 30.0f * s, carta.x, 26.0f * s, 4.0f * s, PANEL, glm::vec4(tp.r * 0.6f, tp.g * 0.6f, tp.b * 0.6f, a),
-		     glm::vec4(tp.r, tp.g, tp.b, a), 13.0f * s, glm::vec4(1.2f * s, 1.0f, 0.0f, 0.0f));
+		// (rama classic-visual-final) debajo, el nombre de la funda en una placa (y como se gana, si estuviera bloqueada)
+		{
+			const int fv = cosmeticos::fundaVisible();
+			const std::string nom = cosmeticos::nombreFunda(fv);
+			const std::string sub = cosmeticos::estado().fundaLibre[fv] ? std::string() : cosmeticos::venceA(cosmeticos::estado().fundaPorEs[fv], cosmeticos::estado().fundaPorEn[fv]);
+			const float tn = 22.0f * s, ts = 16.0f * s;
+			const float pw = std::max(carta.x, std::max(medir(F_TITULO, nom, tn, 1.0f), sub.empty() ? 0.0f : medir(F_TITULO, sub, ts, 1.0f)) + 36.0f * s);
+			const float ph = sub.empty() ? 36.0f * s : 56.0f * s, py = cc.y + carta.y * 0.5f + 18.0f * s;
+			usar(setAtlas, false);
+			caja(cc.x - pw * 0.5f, py, pw, ph, 4.0f * s, PANEL, glm::vec4(0.03f, 0.04f, 0.08f, 0.95f * a), glm::vec4(glm::vec3(ORO) * 0.8f, a), ph * 0.5f,
+			     glm::vec4(1.2f * s, 1.0f, 0.0f, 0.0f));
+			texto(F_TITULO, nom, cc.x, py + (sub.empty() ? ph * 0.5f + 8.0f * s : 25.0f * s), tn, glm::vec4(glm::vec3(ORO), a), NADA, glm::vec3(0.0f), 1, 1.0f);
+			if (!sub.empty()) texto(F_TITULO, sub, cc.x, py + 46.0f * s, ts, glm::vec4(glm::vec3(GRIS), a), NADA, glm::vec3(0.0f), 1, 1.0f);
+		}
 		ayudaPerso(x0 + 40.0f * s, y0 + h - 40.0f * s, a, { { "CRUZ", idioma::t("Opción", "Option") }, { "X", idioma::t("Abrir", "Open") }, { "O", idioma::t("Volver", "Back") } });
 	}
 

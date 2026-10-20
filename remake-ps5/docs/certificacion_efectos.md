@@ -7,7 +7,7 @@ Generado por `src/pruebas/prueba_certificacion.cpp` (rama classic-probador; corr
 **1385 cartas con efecto** (de 1774): **OK 1385**, **FALLA 0**, **SIN PRUEBA 0**.
 
 - Casos a mano (prueba_efectos.cpp): 871 casos, 0 fallos. Solo cuentan para una carta si el caso la usa en su escenario: 153 cartas aparecen unicamente en listas `probadas[id]++` de un caso sin que el caso las use, y para esas el caso no cuenta.
-- De las OK: 428 por caso a mano y plantilla, 781 solo por su caso a mano (la plantilla no pudo verlas en el escenario generico), 176 solo por la plantilla.
+- De las OK: 430 por caso a mano y plantilla, 779 solo por su caso a mano (la plantilla no pudo verlas en el escenario generico), 176 solo por la plantilla.
 - Escenas de los casos presentadas en el front desde la mesa vacia: 1668 (0 con fallas).
 - Duracion ("hasta el final del turno": ATK/DEF y control vuelven al pasar el turno): 25 comprobadas, 25 bien.
 - Tiempo: 4 s.
@@ -241,8 +241,8 @@ prueba_certificacion.cpp quedaron sin esas cartas.
 - **Reaper on the Nightmare**: ataque directo: el rival descarta 1 al azar; se destruye al ser elegido por un efecto.
 - **Ventanas**: fase de espera (`V_ESPERA`, solo si alguien tiene una carta de ese momento: Curse of Fiend, Thunder of
   Ruler, Aqua Spirit), final de la batalla (`V_FIN_BATALLA`), al colocar un monstruo (`V_COLOCADO`: Shadow of Eyes) y
-  repeticion del ataque (si cambia el numero de monstruos del rival y el ataque no sigue, el atacante puede volver a
-  atacar; atajo: si su objetivo sigue, el ataque sigue).
+  repeticion del ataque (si cambia el numero de monstruos del rival, el atacante elige otro objetivo, el mismo o no
+  atacar; si no ataca, puede volver a atacar en esa fase: regla oficial, rama classic-reglas-oficiales).
 - **Dudosas corregidas**: Penalty Game (eliges el efecto), Thunder of Ruler (solo en la espera del rival: sin fase de
   batalla), Shadow of Eyes, D.D. Borderline (sin fase de batalla), Weather Report (segunda fase de batalla), Goddess of
   Whim (moneda cantada; Abare Ushioni, Fairy Box, Fiend Comedian, Kryuel y Gamble ya la cantaban: tanda 7aq), Gatling
@@ -302,8 +302,9 @@ Errores del motor que aparecieron y se arreglaron en ia.h:
 - **Malice Doll of Demise** no volvia si la sacrificaba Ectoplasmer (una magia continua, fuera de la cadena).
 
 Aproximaciones que quedan (anotadas, no cambian el resultado del caso):
-- *Inferno Tempest*: no hay ventana de respuesta justo despues del danno de batalla; se puede activar en cualquier
-  ventana del mismo turno (por ejemplo, la fase final del rival).
+- ~~*Inferno Tempest*: sin ventana justo despues del danno~~: resuelto en la rama classic-reglas-oficiales. Hay una
+  ventana justo despues del danno (`V_DANNO`) solo para el que lo recibio; Inferno Tempest, Attack and Receive y
+  Numinous Healer solo se activan ahi (casos CU-BE-ATAJO-INFERNO-TEMPEST-MOMENTO y CU-BE-VENTANA-DANNO-*).
 - *Fairy Guardian* devuelve la ultima magia de tu cementerio (no comprueba cual mando el rival este turno).
 - *Pitch-Black Power Stone* pasa el contador a un monstruo tuyo que use contadores de magia (no a cualquier carta).
 - *Level Conversion Lab* elige el monstruo de la mano de mas nivel.
@@ -323,7 +324,7 @@ Expectativas de la plantilla ajustadas a mano (la plantilla no puede ver su efec
 - `impenetrable_formation`: plantilla: queda vinculada al monstruo elegido (se ve como equipo); el +700 DEF pide 2+ monstruos todos en defensa (caso a mano)
 - `insect_queen`: plantilla: para atacar sacrifica 1 monstruo (se ve como destruir); la ficha sale en la fase final (caso a mano)
 
-Plantilla por carta: 604 OK, 0 FALLA, 781 sin prueba (no se pudo activar en los escenarios genericos A/B/C o su efecto no se ve ahi: condiciones de tipo, nivel, contadores, azar, efectos continuos). Esas cartas quedan certificadas por su caso a mano; la columna `motivo_plantilla` del CSV dice por que.
+Plantilla por carta: 606 OK, 0 FALLA, 779 sin prueba (no se pudo activar en los escenarios genericos A/B/C o su efecto no se ve ahi: condiciones de tipo, nivel, contadores, azar, efectos continuos). Esas cartas quedan certificadas por su caso a mano; la columna `motivo_plantilla` del CSV dice por que.
 
 ## Escenas de los casos con fallas en el front (0)
 

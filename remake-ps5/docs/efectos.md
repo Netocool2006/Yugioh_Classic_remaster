@@ -490,15 +490,34 @@ mano), Narrow Pass, Neko Mane King, Ordeal of a Traveler, Pineapple Blast, Pyro 
 
 ## Atajos (lo que no es exacto, a proposito)
 
-1. **Sin repeticion de ataque**: si en la ventana de ataque el objetivo desaparece (o aparece un monstruo contra un
-   ataque directo), el ataque se cancela y el atacante cuenta como que ya ataco (la regla real deja elegir otro
-   objetivo).
+1. ~~Sin repeticion de ataque~~: resuelto con la regla oficial (rama classic-reglas-oficiales). Si tras la
+   declaracion cambia el numero de monstruos del rival (Scapegoat, Magician's Circle...), aparece un monstruo ante un
+   ataque directo o el objetivo ya no esta, el motor le pregunta al atacante (`P_ELEGIR` "ef.elegir.repeticion",
+   `Duelo::pedirRepeticion`): los objetivos posibles (el de antes primero; `i = -1` es el ataque directo, solo si el
+   rival no tiene monstruos o el atacante puede atacar directo) y "No atacar" (`J_PASAR`). Elegir un objetivo es una
+   declaracion nueva (`S_ATAQUE` con valor 1, `motorAtaqueDeclarado` y la ventana `V_ATAQUE` otra vez: el rival puede
+   responder). "No atacar" deja al monstruo volver a atacar en esa fase (`repetirAtaque`). Si el numero no cambia
+   (Waboku, Book of Moon), el ataque sigue. La IA responde con su politica de ataque (`Cerebro::elegirRepeticion`: los
+   puntos de `ataquesDe` con el plan, contra "no atacar" = 0; la IA humana y sus simulaciones usan lo mismo; sin
+   personalidad, `elegirIA` ataca solo si gana el combate).
 2. ~~Posicion de Monster Reborn automatica~~: resuelto, la elige quien la activa ("¿en defensa?"; "No" = ataque). Las
    demas invocaciones especiales por efecto siguen saliendo en ataque (o la mejor posicion para la IA).
 3. **Ventanas**: ya hay ventana al empezar la batalla (`V_INICIO_BATALLA`, para el rival) y en el paso de danno
    (`V_PASO_DANNO`, antes del calculo: primero el del turno y luego el rival; solo contraataques y cartas marcadas
    `pasoDanno`: Shrink, Reinforcements, Castle Walls, Limiter Removal; los volteos esperan al calculo). Sigue sin haber
    ventana en la fase de espera ni al final de la batalla.
+   Rama classic-reglas-oficiales: **ventana justo despues del danno** (`V_DANNO`, `abrirVentanaDanno`). Cada danno
+   (de batalla o de efecto; no los pagos de LP) marca al que lo recibio (`ef.dannoPend`; el de batalla guarda su valor
+   para Inferno Tempest). En el primer momento libre despues (al terminar el calculo de danno, al terminar la cadena o
+   la jugada) se abre la ventana solo para ese lado (primero el del turno) y solo si tiene una carta "cuando recibes
+   danno" que pueda activar (`DefCarta::trasDanno`); si no, el momento pasa. En la ventana solo esas cartas empiezan
+   cadena (el rival responde como siempre); al cerrarse sigue lo que esperaba (`PEND_DANNO` guarda el pendiente:
+   el combate, los disparos, la fase). Las cartas del catalogo con ese texto son Attack and Receive, Numinous Healer e
+   Inferno Tempest (3000+ de danno de batalla de un ataque); se revisaron las demas con "take damage"/"inflicts damage":
+   Trap of Board Eraser responde a la activacion (cadena normal), Nutrient Z y Kuriboh van en el calculo, Dark Room of
+   Nightmare es continua y las "si inflige danno de batalla" son efectos del atacante (disparos). "Preguntar antes de
+   activar" se respeta: Nunca pasa solo, Auto pregunta (solo se abre si hay carta), Siempre no abre ventanas de danno
+   sin carta.
 4. **Monster Reborn y compania**: los monstruos marcados "no invocables" en rivales.txt no son objetivo; las fusiones y
    rituales del cementerio se consideran invocados como corresponde.
 5. **Una sola magia de campo boca arriba en todo el campo**: al activar una, la otra boca arriba se va (regla de la
@@ -638,8 +657,8 @@ mano), Narrow Pass, Neko Mane King, Ordeal of a Traveler, Pineapple Blast, Pyro 
     Circle: anula todo el danno a ti ese turno. Pyramid Energy: siempre +200 ATK. Mushroom Man #2: sin pasar el
     control. Mass Driver: el sacrificio lo elige el juego. Miracle Dig: vuelven los 3 ultimos desterrados.
 46. Card Shuffle: siempre baraja el mazo del rival. Cursed Seal: el descarte no tiene que ser una magia. Curse of Royal:
-    niega lo que elige 1 magia/trampa del campo. Attack and Receive: se activa en cualquier momento del turno en que
-    recibiste danno. Blade Rabbit / Ante: el juego elige (el mas fuerte del rival / la de mayor nivel de cada mano).
+    niega lo que elige 1 magia/trampa del campo. Attack and Receive: ~~en cualquier momento del turno en que recibiste
+    danno~~ (resuelto: solo en la ventana justo despues del danno, `V_DANNO`). Blade Rabbit / Ante: el juego elige (el mas fuerte del rival / la de mayor nivel de cada mano).
     Archfiend's Oath: declara la mas repetida que queda en tu mazo. D.D. Designator: declara la mas repetida de la
     mano del rival (siempre acierta).
 47. Dice Re-Roll: se repite sola la primera tirada que le conviene a quien la activo (solo en Graceful Dice, Skull Dice,
@@ -652,7 +671,7 @@ mano), Narrow Pass, Neko Mane King, Ordeal of a Traveler, Pineapple Blast, Pyro 
     cada carta en ia.h). Magic Drain: el rival descarta una magia si tiene. Lightforce Sword: vuelve al empezar su
     4o turno. Dark Scorpion Combination: danno normal (no 400). Megarock Dragon: destierra todas las Rocas. Heart of
     Clear Water: solo en batalla y sin destruirse si sube el ATK. Light of Judgment: el descarte no tiene que ser LUZ.
-48. Numinous Healer: en cualquier momento del turno en que recibiste danno. Shadow Spell: el monstruo si puede cambiar
+48. Numinous Healer: ~~en cualquier momento del turno en que recibiste danno~~ (resuelto: solo en la ventana `V_DANNO`). Shadow Spell: el monstruo si puede cambiar
     de posicion. Ojama Trio / Multiplication of Ants: las fichas usan la cara de la carta, se pueden sacrificar y (las
     hormigas) no son Insectos. Order to Smash: destruye las 2 primeras magias/trampas. Share the Pain / Soul Release /
     Painful Choice / Rescue Cat / Rite of Spirit / Soul Resurrection / Salvage: el juego elige (el de menos valor del

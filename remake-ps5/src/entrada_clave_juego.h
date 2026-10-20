@@ -9,8 +9,34 @@
 	//  - figuras.h: poseEntradaClave (matrizFigura: rigidas, crecen girando y caen) y clipEntradaClave (posarFiguras:
 	//    con esqueleto, su clip de ataque).
 	// PC: YUGI_ENTRADA=0 la apaga (solo para comparar).
+	// PC (capturas, rama classic-visual-final): YUGI_CARTA_CLAVE=<id de carta> (o 1 = blue_eyes) salta el sorteo y, a
+	// los 2,5 s del duelo, invoca esa carta en el campo del jugador (invocacion especial de verdad: S_INVOCA) para ver
+	// su entrada. YUGI_CARTA_CLAVE_RIVAL=1 la invoca el rival. La llama pruebaResultado (resultado_juego.h).
 	bool entradaClaveEncendida{ true };
 	bool entradaClaveLeida{ false };
+#if defined(PS5_HOST_REFERENCE)
+	float tPruebaClave{ 0.0f };
+	bool pruebaClaveHecha{ false };
+	void pruebaCartaClave(float dt)
+	{
+		const char* e = getenv("YUGI_CARTA_CLAVE");
+		if (!e || !*e || pruebaClaveHecha || ctl.vista.pantalla != VD::DUELO) return;
+		if (ctl.vista.sorteo) {
+			ctl.vista.sorteo = false;
+			arrancarDueloIA(0);
+			tPruebaClave = 0.0f;
+			return;
+		}
+		tPruebaClave += dt;
+		if (tPruebaClave < 2.5f || dueloIA.ganador >= 0) return;
+		pruebaClaveHecha = true;
+		const std::string id = std::string(e) == "1" ? std::string("blue_eyes") : std::string(e);
+		const char* r = getenv("YUGI_CARTA_CLAVE_RIVAL");
+		const int lado = r && atoi(r) != 0 ? 1 : 0;
+		const int z = dueloIA.invocarEspecial(lado, id, false);
+		fprintf(stderr, "[entrada] prueba YUGI_CARTA_CLAVE=%s: lado %d zona %d (clave: %s)\n", id.c_str(), lado, z, esCartaClave(id) ? "si" : "no");
+	}
+#endif
 
 	// al presentar una invocacion (S_INVOCA): la entrada si la carta es clave. Devuelve cuanto debe esperar el duelo
 	float empezarEntradaClave(const std::string& carta, int lado, int z)

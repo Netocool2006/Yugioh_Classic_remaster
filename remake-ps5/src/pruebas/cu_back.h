@@ -60,6 +60,13 @@ struct Mesa {
 		j.costes = df ? costesIA(d, lado, *df, f) : std::vector<Lugar>{};
 		return d.aplicar(j);
 	}
+	void pasarTodo1()   // (una sola pregunta: pasar o elegir la primera)
+	{
+		Jugada j;
+		j.tipo = d.ef.preg.tipo == P_ELEGIR ? J_ELEGIR : J_PASAR;
+		j.objetivo = 0;
+		d.aplicar(j);
+	}
 	void pasarTodo()
 	{
 		for (int g = 0; g < 30 && d.ef.preg.tipo != P_NADA; g++) {
@@ -117,6 +124,15 @@ struct Mesa {
 		return std::find(m.begin(), m.end(), id) != m.end();
 	}
 };
+// pasa todas las preguntas de responder (las de elegir quedan)
+inline void pasarRival(Mesa& m)
+{
+	for (int g = 0; g < 30 && m.d.ef.preg.tipo == P_RESPUESTA; g++) {
+		Jugada j;
+		j.tipo = J_PASAR;
+		m.d.aplicar(j);
+	}
+}
 inline Lugar M(int lado, int z) { return { lado, EN_MONSTRUO, z }; }
 inline Lugar MT(int lado, int z) { return { lado, EN_MT, z }; }
 inline Lugar H(int lado, int k) { return { lado, EN_MANO, k }; }
@@ -515,26 +531,133 @@ inline void reglas(const Base& base)
 		const int z = e.mon(0, "summoned_skull", true);
 		cu::caso("CU-BE-BATALLA-DEFENSA-NO-ATACA", !e.jugar(J_ATACAR, -1, z, {}, -1), "un monstruo en defensa ataco");
 	}
-	// la repeticion del ataque: el rival cambia el numero de monstruos tras la declaracion (Scapegoat). Contra un
-	// ataque directo, el ataque no sigue y el atacante puede volver a declarar; si el objetivo sigue, el ataque sigue
-	// (atajo del motor, docs/efectos.md; ver la DECISION CU-BE-REPETICION-ATAQUE-ELEGIR)
+	// la repeticion del ataque (regla oficial, rama classic-reglas-oficiales): si tras la declaracion cambia el numero de
+	// monstruos del rival (Scapegoat), el atacante elige otro objetivo, el mismo o no atacar (pregunta P_ELEGIR
+	// "ef.elegir.repeticion"); si no ataca, el monstruo puede volver a atacar en esta fase
 	{
 		Mesa m(&base, F_BATALLA);
 		const int a = m.mon(0, "summoned_skull");
 		const int sg = m.colocar(1, "scapegoat", 1);
 		m.jugar(J_ATACAR, -1, a, {}, -1);
 		if (m.d.ef.preg.tipo == P_RESPUESTA && m.d.ef.preg.lado == 1) m.activar(1, MT(1, sg));
+		pasarRival(m);
+		const bool pregunta = m.d.ef.preg.tipo == P_ELEGIR && m.d.ef.preg.lado == 0 && m.d.ef.preg.texto == "ef.elegir.repeticion" && m.d.ef.preg.opcional;
+		cu::caso("CU-BE-REPETICION-ATAQUE", pregunta && m.d.ef.preg.cands.size() == 4, "Scapegoat contra un ataque directo: no se pregunto la repeticion (pregunta %d lado %d, %d candidatos)",
+		         m.d.ef.preg.tipo, m.d.ef.preg.lado, (int)m.d.ef.preg.cands.size());
+		bool sinDirecto = true;
+		for (const Lugar& g : m.d.ef.preg.cands) sinDirecto &= g.i >= 0;
+		cu::caso("CU-BE-REPETICION-ATAQUE-DIRECTO", pregunta && sinDirecto, "con fichas en el campo se ofrecio el ataque directo");
+		Jugada no;
+		no.tipo = J_PASAR;
+		cu::caso("CU-BE-REPETICION-ATAQUE", m.d.aplicar(no), "no se pudo elegir no atacar");
+		cu::caso("CU-BE-REPETICION-ATAQUE", m.d.l[1].monstruos() == 4 && m.d.l[1].lp == LP_INICIAL && m.d.puedeAtacar(0, a) && !m.d.ocupado(),
+		         "no atacar: fichas %d, LP %d, puede volver a atacar %d", m.d.l[1].monstruos(), m.d.l[1].lp, (int)m.d.puedeAtacar(0, a));
+		cu::caso("CU-BE-REPETICION-ATAQUE", m.jugar(J_ATACAR, -1, a, {}, 0), "tras no atacar, no pudo volver a declarar el ataque");
 		m.pasarTodo();
-		cu::caso("CU-BE-REPETICION-ATAQUE", m.d.l[1].monstruos() == 4 && m.d.l[1].lp == LP_INICIAL && m.d.puedeAtacar(0, a),
-		         "Scapegoat contra un ataque directo: fichas %d, LP %d, puede volver a atacar %d", m.d.l[1].monstruos(), m.d.l[1].lp, (int)m.d.puedeAtacar(0, a));
-		Mesa c(&base, F_BATALLA);
-		const int b = c.mon(0, "summoned_skull");
-		c.mon(1, "celtic_guardian");
-		const int s2 = c.colocar(1, "scapegoat", 1);
-		c.jugar(J_ATACAR, -1, b, {}, 0);
-		if (c.d.ef.preg.tipo == P_RESPUESTA && c.d.ef.preg.lado == 1) c.activar(1, MT(1, s2));
-		c.pasarTodo();
-		cu::caso("CU-BE-REPETICION-ATAQUE", c.d.l[1].monstruos() == 4 && c.d.l[1].lp == LP_INICIAL - 1100, "Scapegoat con el objetivo en el campo: el ataque no siguio (LP %d)", c.d.l[1].lp);
+		cu::caso("CU-BE-REPETICION-ATAQUE", m.d.l[1].monstruos() == 3 && !m.d.puedeAtacar(0, a), "el segundo ataque no destruyo la ficha o el monstruo ataco dos veces");
+	}
+	{   // el objetivo sigue en el campo: elegir otro objetivo (una ficha) o el mismo
+		for (int mismo = 0; mismo < 2; mismo++) {
+			Mesa c(&base, F_BATALLA);
+			const int b = c.mon(0, "summoned_skull");
+			const int cg = c.mon(1, "celtic_guardian");
+			const int s2 = c.colocar(1, "scapegoat", 1);
+			c.jugar(J_ATACAR, -1, b, {}, cg);
+			if (c.d.ef.preg.tipo == P_RESPUESTA && c.d.ef.preg.lado == 1) c.activar(1, MT(1, s2));
+			pasarRival(c);
+			const bool pregunta = c.d.ef.preg.tipo == P_ELEGIR && c.d.ef.preg.lado == 0 && c.d.ef.preg.texto == "ef.elegir.repeticion" && c.d.ef.preg.cands.size() == 5;
+			cu::caso("CU-BE-REPETICION-ATAQUE-ELEGIR", pregunta && c.d.ef.preg.cands[0].i == cg, "con el objetivo en el campo no se pregunto (o no va primero el de antes): pregunta %d, %d candidatos",
+			         c.d.ef.preg.tipo, (int)c.d.ef.preg.cands.size());
+			if (!pregunta) continue;
+			Jugada j;
+			j.tipo = J_ELEGIR;
+			j.objetivo = mismo ? 0 : 1;
+			const int zf = c.d.ef.preg.cands[(size_t)j.objetivo].i;
+			c.d.aplicar(j);
+			const bool otraVentana = c.d.ef.preg.tipo == P_NADA || (c.d.ef.ventana.tipo == V_ATAQUE && c.d.ef.ataque.hay && c.d.ef.ataque.objetivo == zf);
+			cu::caso("CU-BE-REPETICION-ATAQUE-ELEGIR", otraVentana, "la repeticion no declaro el ataque al elegido");
+			c.pasarTodo();
+			if (mismo)
+				cu::caso("CU-BE-REPETICION-ATAQUE-ELEGIR", c.zonaDe(1, "celtic_guardian") < 0 && c.d.l[1].lp == LP_INICIAL - 1100 && c.d.l[1].monstruos() == 4,
+				         "elegir el mismo objetivo: Celtic %d, LP %d", c.zonaDe(1, "celtic_guardian"), c.d.l[1].lp);
+			else
+				cu::caso("CU-BE-REPETICION-ATAQUE-ELEGIR", c.zonaDe(1, "celtic_guardian") >= 0 && c.d.l[1].lp == LP_INICIAL && c.d.l[1].monstruos() == 4,
+				         "elegir otro objetivo (una ficha): Celtic %d, LP %d, monstruos %d", c.zonaDe(1, "celtic_guardian"), c.d.l[1].lp, c.d.l[1].monstruos());
+			cu::caso("CU-BE-REPETICION-ATAQUE-ELEGIR", !c.d.puedeAtacar(0, b), "tras la repeticion el monstruo puede atacar otra vez");
+		}
+	}
+	{   // sin cambio en el numero de monstruos (Waboku): no hay repeticion, el ataque sigue
+		Mesa w(&base, F_BATALLA);
+		const int a = w.mon(0, "summoned_skull");
+		const int cg = w.mon(1, "celtic_guardian");
+		const int wb = w.colocar(1, "waboku", 1);
+		w.jugar(J_ATACAR, -1, a, {}, cg);
+		if (w.d.ef.preg.tipo == P_RESPUESTA && w.d.ef.preg.lado == 1) w.activar(1, MT(1, wb));
+		pasarRival(w);
+		cu::caso("CU-BE-REPETICION-ATAQUE", w.d.ef.preg.tipo != P_ELEGIR && !w.d.ef.repeticion.hay, "sin cambio en el numero de monstruos se pregunto la repeticion");
+		w.pasarTodo();
+		bool combate = false;
+		for (const Suceso& x : w.d.sucesos) combate |= x.tipo == S_COMBATE;
+		cu::caso("CU-BE-REPETICION-ATAQUE", combate && w.zonaDe(1, "celtic_guardian") >= 0 && w.d.l[1].lp == LP_INICIAL, "con Waboku el ataque no siguio o hizo danno");
+	}
+	{   // el objetivo se fue y el campo del rival quedo vacio: la repeticion ofrece el ataque directo
+		Mesa m(&base, F_BATALLA);
+		const int a = m.mon(0, "summoned_skull");
+		const int cg = m.mon(1, "celtic_guardian");
+		m.d.preguntarSiempre[1] = true;   // (el rival tiene su ventana tras la declaracion)
+		m.jugar(J_ATACAR, -1, a, {}, cg);
+		m.d.alCementerio(1, cg);   // (como si un efecto lo sacara en la ventana del ataque)
+		pasarRival(m);
+		const bool pregunta = m.d.ef.preg.tipo == P_ELEGIR && m.d.ef.repeticion.hay && m.d.ef.preg.cands.size() == 1 && m.d.ef.preg.cands[0].i == -1;
+		cu::caso("CU-BE-REPETICION-ATAQUE-DIRECTO", pregunta, "sin monstruos del rival la repeticion no ofrece el ataque directo (%d candidatos)", (int)m.d.ef.preg.cands.size());
+		m.pasarTodo();
+		cu::caso("CU-BE-REPETICION-ATAQUE-DIRECTO", m.d.l[1].lp == LP_INICIAL - 2500, "el ataque directo de la repeticion: LP %d", m.d.l[1].lp);
+	}
+	// la IA (clasica y humana) responde la repeticion con su politica de ataque
+	{
+		Cerebro c(PERSONALIDADES[0], 8, 3);
+		Humana h;
+		h.configurar(true, "", "", 5);
+		Cerebro ch(PERSONALIDADES[0], 8, 5);
+		{   // letal: el objetivo se fue, campo vacio y el rival con 1000 LP: ataca directo
+			Mesa m(&base, F_BATALLA);
+			m.d.l[1].lp = 1000;
+			const int a = m.mon(0, "summoned_skull");
+			const int cg = m.mon(1, "celtic_guardian");
+			m.d.preguntarSiempre[1] = true;
+			m.jugar(J_ATACAR, -1, a, {}, cg);
+			m.d.alCementerio(1, cg);
+			pasarRival(m);
+			const bool pregunta = m.d.ef.preg.tipo == P_ELEGIR && m.d.ef.repeticion.hay;
+			const Jugada j = c.decidir(m.d);
+			cu::caso("CU-BE-REPETICION-ATAQUE-IA", pregunta && j.tipo == J_ELEGIR && j.objetivo == 0, "IA clasica: con el letal no ataco directo en la repeticion (jugada %d, objetivo %d)", (int)j.tipo, j.objetivo);
+			Jugada jh;
+			const bool lista = h.empezar(m.d, ch, jh);
+			cu::caso("CU-BE-REPETICION-ATAQUE-IA", pregunta && lista && jh.tipo == J_ELEGIR && jh.objetivo == 0, "IA humana: con el letal no ataco directo en la repeticion (jugada %d, objetivo %d)", (int)jh.tipo, jh.objetivo);
+			m.d.aplicar(j);
+			m.pasarTodo();
+			cu::caso("CU-BE-REPETICION-ATAQUE-IA", m.d.ganador == 0, "la respuesta de la IA no gano el duelo");
+			(void)a;
+		}
+		{   // suicida: el objetivo se fue y en su lugar hay un Blue-Eyes: no ataca (y puede volver a atacar)
+			Mesa m(&base, F_BATALLA);
+			const int a = m.mon(0, "celtic_guardian");
+			const int bo = m.mon(1, "battle_ox");
+			m.d.preguntarSiempre[1] = true;
+			m.jugar(J_ATACAR, -1, a, {}, bo);
+			m.d.alCementerio(1, bo);
+			m.mon(1, "blue_eyes");
+			pasarRival(m);
+			const bool pregunta = m.d.ef.preg.tipo == P_ELEGIR && m.d.ef.repeticion.hay && m.d.ef.preg.cands.size() == 1;
+			const Jugada j = c.decidir(m.d);
+			cu::caso("CU-BE-REPETICION-ATAQUE-IA", pregunta && j.tipo == J_PASAR, "IA clasica: ataco a un Blue-Eyes con 1400 en la repeticion (jugada %d)", (int)j.tipo);
+			Jugada jh;
+			const bool lista = h.empezar(m.d, ch, jh);
+			cu::caso("CU-BE-REPETICION-ATAQUE-IA", pregunta && lista && jh.tipo == J_PASAR, "IA humana: ataco a un Blue-Eyes con 1400 en la repeticion (jugada %d)", (int)jh.tipo);
+			cu::caso("CU-BE-REPETICION-ATAQUE-IA", elegirIA(m.d, 0) < 0, "elegirIA (sin personalidad) ataco al Blue-Eyes");
+			m.d.aplicar(j);
+			cu::caso("CU-BE-REPETICION-ATAQUE-IA", m.zonaDe(0, "celtic_guardian") >= 0 && m.d.puedeAtacar(0, a), "tras no atacar, Celtic no sigue o no puede volver a atacar");
+		}
 	}
 	// victoria: LP a 0
 	{
@@ -559,14 +682,6 @@ inline void reglas(const Base& base)
 
 // ------------------------------------------------------------------------------------------------- atajos conocidos
 // los 4 atajos que quedaron anotados en docs/control_final.md: la prueba pide lo que dice el texto de la carta
-inline void pasarRival(Mesa& m)
-{
-	for (int g = 0; g < 30 && m.d.ef.preg.tipo == P_RESPUESTA; g++) {
-		Jugada j;
-		j.tipo = J_PASAR;
-		m.d.aplicar(j);
-	}
-}
 inline void atajos(const Base& base)
 {
 	// Fairy Guardian: vuelve al fondo del mazo la magia que el RIVAL mando al cementerio este turno (no la ultima)
@@ -646,15 +761,126 @@ inline void atajos(const Base& base)
 			         "el dado no se aplico al monstruo elegido");
 		}
 	}
-	// Inferno Tempest: se activa cuando recibes 3000+ de danno de batalla (el atajo: en cualquier ventana del turno)
+	// la ventana justo despues del danno (regla oficial, rama classic-reglas-oficiales): Inferno Tempest (3000+ de danno de
+	// batalla de un ataque), Attack and Receive y Numinous Healer se activan solo ahi, solo el que recibio el danno
 	{
 		Mesa m(&base, F_BATALLA);
 		const int a = m.mon(0, "blue_eyes");
 		const int it = m.colocar(1, "inferno_tempest", 1);
 		m.jugar(J_ATACAR, -1, a, {}, -1);
+		for (int g = 0; g < 10 && m.d.ef.preg.tipo == P_RESPUESTA && m.d.ef.ventana.tipo != V_DANNO; g++) m.pasarTodo1();
+		const bool ventana = m.d.ef.preg.tipo == P_RESPUESTA && m.d.ef.preg.lado == 1 && m.d.ef.ventana.tipo == V_DANNO;
+		cu::caso("CU-BE-ATAJO-INFERNO-TEMPEST", ventana && m.d.l[1].lp == LP_INICIAL - 3000 && motivoNoActivar(m.d, 1, MT(1, it), true).empty(),
+		         "tras 3000 de danno de batalla no se abrio la ventana con Inferno Tempest (pregunta %d lado %d ventana %d, LP %d)", m.d.ef.preg.tipo, m.d.ef.preg.lado, m.d.ef.ventana.tipo, m.d.l[1].lp);
+		cu::caso("CU-BE-VENTANA-DANNO", ventana && motivoNoActivar(m.d, 0, MT(1, it), true) != "", "el que no recibio el danno puede activar en la ventana del danno");
+		if (ventana) {
+			m.d.l[1].mazo.push_back("battle_ox");
+			const bool ok = m.activar(1, MT(1, it));
+			m.pasarTodo();
+			cu::caso("CU-BE-ATAJO-INFERNO-TEMPEST", ok && std::find(m.d.l[1].desterrados.begin(), m.d.l[1].desterrados.end(), "battle_ox") != m.d.l[1].desterrados.end(),
+			         "Inferno Tempest no destierra los monstruos del mazo");
+		}
+		// el momento: si no se activa en esa ventana, despues ya no (ni en la batalla ni en la fase final)
+		Mesa c(&base, F_BATALLA);
+		const int b = c.mon(0, "blue_eyes");
+		const int it2 = c.colocar(1, "inferno_tempest", 1);
+		c.jugar(J_ATACAR, -1, b, {}, -1);
+		for (int g = 0; g < 10 && c.d.ef.preg.tipo == P_RESPUESTA && c.d.ef.ventana.tipo != V_DANNO; g++) c.pasarTodo1();
+		const bool v2 = c.d.ef.ventana.tipo == V_DANNO && c.d.ef.preg.lado == 1;
+		c.pasarTodo();
+		cu::caso("CU-BE-ATAJO-INFERNO-TEMPEST-MOMENTO", v2 && !c.d.ocupado() && !motivoNoActivar(c.d, 1, MT(1, it2), true).empty(),
+		         "tras pasar la ventana del danno, Inferno Tempest se puede activar despues (ventana %d)", (int)v2);
+		c.jugar(J_FASE);
+		c.pasarTodo();
+		c.jugar(J_FASE);
+		cu::caso("CU-BE-ATAJO-INFERNO-TEMPEST-MOMENTO", !motivoNoActivar(c.d, 1, MT(1, it2), true).empty() && activables(c.d, 1, true).empty(),
+		         "Inferno Tempest se puede activar en la fase %d, despues del danno", (int)c.d.fase);
+		c.pasarTodo();
+		// con menos de 3000 (Battle Ox, 1700) no hay ventana para Inferno Tempest
+		Mesa e(&base, F_BATALLA);
+		const int o = e.mon(0, "battle_ox");
+		e.colocar(1, "inferno_tempest", 1);
+		e.jugar(J_ATACAR, -1, o, {}, -1);
+		e.pasarTodo();
+		bool vioVentana = false;
+		cu::caso("CU-BE-ATAJO-INFERNO-TEMPEST", e.d.l[1].lp == LP_INICIAL - 1700 && !e.d.ocupado(), "con 1700 de danno se abrio una ventana para Inferno Tempest");
+		(void)vioVentana;
+	}
+	// Attack and Receive: danno de batalla; se activa en la ventana y hace 700 al rival
+	{
+		Mesa m(&base, F_BATALLA);
+		const int a = m.mon(0, "summoned_skull");
+		const int ar = m.colocar(1, "attack_and_receive", 1);
+		const int ar0 = m.colocar(0, "attack_and_receive", 1);
+		m.jugar(J_ATACAR, -1, a, {}, -1);
+		for (int g = 0; g < 10 && m.d.ef.preg.tipo == P_RESPUESTA && m.d.ef.ventana.tipo != V_DANNO; g++) m.pasarTodo1();
+		const bool ventana = m.d.ef.ventana.tipo == V_DANNO && m.d.ef.preg.tipo == P_RESPUESTA && m.d.ef.preg.lado == 1;
+		cu::caso("CU-BE-VENTANA-DANNO-ATTACK-RECEIVE", ventana && m.d.l[1].lp == LP_INICIAL - 2500, "tras el danno de batalla no se abrio la ventana con Attack and Receive (ventana %d)", m.d.ef.ventana.tipo);
+		cu::caso("CU-BE-VENTANA-DANNO", ventana && !motivoNoActivar(m.d, 0, MT(0, ar0), true).empty(), "el atacante (sin danno) puede activar su Attack and Receive");
+		if (ventana) {
+			m.activar(1, MT(1, ar));
+			// el atacante recibe 700: su propia ventana, con su Attack and Receive
+			for (int g = 0; g < 10 && m.d.ef.preg.tipo == P_RESPUESTA && !(m.d.ef.ventana.tipo == V_DANNO && m.d.ef.preg.lado == 0); g++) m.pasarTodo1();
+			const bool suya = m.d.ef.ventana.tipo == V_DANNO && m.d.ef.preg.lado == 0 && m.d.l[0].lp == LP_INICIAL - 700;
+			cu::caso("CU-BE-VENTANA-DANNO-ATTACK-RECEIVE", suya, "Attack and Receive no hizo 700 o el atacante no tuvo su ventana (LP %d, ventana %d lado %d)", m.d.l[0].lp, m.d.ef.ventana.tipo, m.d.ef.preg.lado);
+			m.pasarTodo();
+			cu::caso("CU-BE-VENTANA-DANNO", !m.d.ocupado() && m.d.fase == F_BATALLA, "despues de las ventanas del danno la batalla no sigue libre");
+			cu::caso("CU-BE-VENTANA-DANNO-ATTACK-RECEIVE", !motivoNoActivar(m.d, 0, MT(0, ar0), true).empty(), "Attack and Receive se puede activar despues de su ventana");
+		}
+		// sin carta para ese momento no se abre nada
+		Mesa c(&base, F_BATALLA);
+		const int b = c.mon(0, "summoned_skull");
+		c.colocar(1, "mirror_force", 1);
+		c.jugar(J_ATACAR, -1, b, {}, -1);
+		for (int g = 0; g < 10 && c.d.ef.preg.tipo == P_RESPUESTA && c.d.ef.ventana.tipo != V_DANNO; g++) c.pasarTodo1();
+		cu::caso("CU-BE-VENTANA-DANNO", c.d.ef.ventana.tipo != V_DANNO, "sin carta de ese momento se abrio la ventana del danno");
+		c.pasarTodo();
+	}
+	// Numinous Healer: danno de efecto (Hinotama); solo el que lo recibio
+	{
+		Mesa m(&base);
+		const int nh = m.colocar(1, "numinous_healer", 1);
+		const int nh0 = m.colocar(0, "numinous_healer", 1);
+		const int k = m.mano(0, "hinotama");
+		m.activar(0, H(0, k));
+		for (int g = 0; g < 10 && m.d.ef.preg.tipo == P_RESPUESTA && m.d.ef.ventana.tipo != V_DANNO; g++) m.pasarTodo1();
+		const bool ventana = m.d.ef.ventana.tipo == V_DANNO && m.d.ef.preg.tipo == P_RESPUESTA && m.d.ef.preg.lado == 1 && m.d.l[1].lp == LP_INICIAL - 500;
+		cu::caso("CU-BE-VENTANA-DANNO-NUMINOUS", ventana, "tras el danno de efecto (Hinotama) no se abrio la ventana con Numinous Healer (ventana %d, LP %d)", m.d.ef.ventana.tipo, m.d.l[1].lp);
+		cu::caso("CU-BE-VENTANA-DANNO", ventana && !motivoNoActivar(m.d, 0, MT(0, nh0), true).empty(), "el que no recibio danno puede activar Numinous Healer");
+		if (ventana) {
+			m.activar(1, MT(1, nh));
+			m.pasarTodo();
+			cu::caso("CU-BE-VENTANA-DANNO-NUMINOUS", m.d.l[1].lp == LP_INICIAL - 500 + 1000, "Numinous Healer no gano 1000 (LP %d)", m.d.l[1].lp);
+		}
+		Mesa c(&base);
+		const int nh1 = c.colocar(1, "numinous_healer", 1);
+		const int k2 = c.mano(0, "hinotama");
+		c.activar(0, H(0, k2));
+		c.pasarTodo();
+		cu::caso("CU-BE-VENTANA-DANNO-NUMINOUS", !c.d.ocupado() && c.d.l[1].lp == LP_INICIAL - 500 && !motivoNoActivar(c.d, 1, MT(1, nh1), true).empty(),
+		         "Numinous Healer se puede activar despues de su ventana");
+	}
+	// la IA usa su carta en la ventana del danno (usarla o perderla)
+	{
+		Cerebro c(PERSONALIDADES[0], 8, 3);
+		Humana h;
+		h.configurar(true, "", "", 5);
+		Cerebro ch(PERSONALIDADES[0], 8, 5);
+		Mesa m(&base, F_BATALLA);
+		const int a = m.mon(0, "summoned_skull");
+		m.colocar(1, "attack_and_receive", 1);
+		m.jugar(J_ATACAR, -1, a, {}, -1);
+		for (int g = 0; g < 10 && m.d.ef.preg.tipo == P_RESPUESTA && m.d.ef.ventana.tipo != V_DANNO; g++) m.pasarTodo1();
+		const bool ventana = m.d.ef.ventana.tipo == V_DANNO && m.d.ef.preg.lado == 1;
+		const Jugada j = c.decidir(m.d);
+		cu::caso("CU-BE-VENTANA-DANNO-IA", ventana && j.tipo == J_ACTIVAR, "IA clasica: no activo Attack and Receive en su ventana (jugada %d)", (int)j.tipo);
+		Jugada jh;
+		bool lista = h.empezar(m.d, ch, jh);
+		for (int g = 0; g < 400 && !lista; g++) lista = h.trabajar(m.d, ch, 5.0, jh);
+		cu::caso("CU-BE-VENTANA-DANNO-IA", ventana && lista && jh.tipo == J_ACTIVAR, "IA humana: no activo Attack and Receive en su ventana (jugada %d)", (int)jh.tipo);
+		m.d.aplicar(j);
 		m.pasarTodo();
-		cu::caso("CU-BE-ATAJO-INFERNO-TEMPEST", m.d.l[1].lp == LP_INICIAL - 3000 && motivoNoActivar(m.d, 1, MT(1, it), true).empty(), "tras 3000 de danno de batalla, Inferno Tempest no se puede activar");
-		cu::decision("CU-BE-ATAJO-INFERNO-TEMPEST-MOMENTO", "Inferno Tempest (y Attack and Receive, Numinous Healer) se pueden activar en cualquier ventana del turno despues del danno; la regla pide justo despues. Ver decisiones_pendientes.md");
+		cu::caso("CU-BE-VENTANA-DANNO-IA", m.d.l[0].lp == LP_INICIAL - 700, "la activacion de la IA no hizo 700 (LP %d)", m.d.l[0].lp);
 	}
 	// Preguntar antes de activar = Siempre: el motor ofrece al jugador la ventana aunque no tenga nada que activar
 	{
@@ -671,7 +897,6 @@ inline void atajos(const Base& base)
 		c.pasarTodo();
 		cu::caso("CU-BE-PREGUNTAR-SIEMPRE", c.zonaDe(1, "celtic_guardian") >= 0 && !c.d.ocupado(), "tras pasar el duelo no siguio");
 	}
-	cu::decision("CU-BE-REPETICION-ATAQUE-ELEGIR", "si el objetivo sigue en el campo, el ataque sigue solo (la regla deja elegir otro objetivo o no atacar). Ver decisiones_pendientes.md");
 }
 
 // ------------------------------------------------------------------------------------------------- mazos

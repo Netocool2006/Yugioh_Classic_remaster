@@ -152,7 +152,7 @@ inline const std::unordered_map<std::string, std::string>& tabla()
 		{ "Rival", "Opponent" }, { "NIVEL DESBLOQUEADO", "LEVEL UNLOCKED" }, { "¡ERES EL CAMPEÓN!", "YOU ARE THE CHAMPION!" },
 		{ "Continuar", "Continue" },
 		// menu de pausa y ayuda de fases (rama classic-arreglos: duelo_juego.h, duelo_ui.h, control.h)
-		{ "PAUSA", "PAUSE" }, { "Pausa", "Pause" }, { "Volver", "Back" }, { "Abandonar duelo (derrota)", "Forfeit duel (counts as a loss)" },
+		{ "PAUSA", "PAUSE" }, { "Pausa", "Pause" }, { "Registro", "Log" }, { "Volver", "Back" }, { "Abandonar duelo (derrota)", "Forfeit duel (counts as a loss)" },
 		{ "Salir al menú principal", "Exit to main menu" }, { "Ir a la Batalla", "Go to Battle" }, { "Ir a Principal 2", "Go to Main 2" },
 		{ "Terminar turno", "End turn" }, { "Fase (en espera)", "Phase (queued)" }, { "Cambia de fase al terminar la animación", "Phase changes when the animation ends" },
 		// motor de efectos (rama classic-efectos: control.h, duelo_juego.h)
@@ -253,6 +253,8 @@ inline const std::unordered_map<std::string, std::string>& tabla()
 		{ "Ver figura", "View figure" }, { "Galería 3D", "3D gallery" }, { "Esta carta no tiene figura 3D", "This card has no 3D figure" },
 		// extras (rama classic-extras: Opciones > Personalizacion; lo demas va con idioma::t en cosmeticos*.h)
 		{ "Personalización", "Customization" },
+		// reglas oficiales (rama classic-reglas-oficiales: repeticion del ataque y ventana tras el danno)
+		{ "Ataque directo", "Direct attack" }, { "No atacar", "Do not attack" }, { "Recibiste daño", "You took damage" },
 	};
 	return t;
 }
@@ -273,6 +275,25 @@ inline const char* tr(const char* es)
 	const auto& t = tabla();
 	auto it = t.find(es);
 	return it == t.end() ? es : it->second.c_str();
+}
+
+// rama classic-visual-final: los textos de carta en espanol (cartas_ui.txt) traen terminos de reglas en ingles ("End
+// Phase", "Standby Phase"...). Al cargarlos en espanol se cambian por los de la interfaz; los datos EN no se tocan
+inline std::string reglasEs(std::string s)
+{
+	static const char* const R[][2] = {
+		{ "Main Phase 1", "Fase Principal 1" }, { "Main Phase 2", "Fase Principal 2" }, { "Main Phase", "Fase Principal" },
+		{ "End Phase", "Fase Final" },          { "Standby Phase", "Fase de Espera" },   { "Battle Phase", "Fase de Batalla" },
+		{ "Draw Phase", "Fase de Robo" },       { "Damage Step", "Paso de Daño" },       { "Battle Step", "Paso de Batalla" },
+	};
+	for (const auto& r : R) {
+		const size_t n = strlen(r[0]);
+		for (size_t p = s.find(r[0]); p != std::string::npos; p = s.find(r[0], p)) {
+			s.replace(p, n, r[1]);
+			p += strlen(r[1]);
+		}
+	}
+	return s;
 }
 
 // ---------------------------------------------------------------------------------------------- preferencia

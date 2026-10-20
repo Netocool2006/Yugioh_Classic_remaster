@@ -1298,6 +1298,7 @@ private:
 	std::string nombreLugar(const ia::Lugar& g) const
 	{
 		static const char* const DONDE[] = { "campo", "campo", "mano", "cementerio", "campo", "desterrada", "mazo", "fusión" };
+		if (g.donde == ia::EN_MONSTRUO && g.i < 0) return idioma::tr("Ataque directo");   // (rama classic-reglas-oficiales: repeticion del ataque)
 		std::string r = nombreDe(ia::cartaEn(*duelo, g));
 		return r + " (" + idioma::tr(DONDE[g.donde]) + (g.lado ? std::string(" ") + idioma::tr("rival") : std::string()) + ")";
 	}
@@ -1330,6 +1331,7 @@ private:
 			opciones.push_back({ AC_ELEGIR_LISTA, nombreLugar(cands[(size_t)k]), true, "", j });
 		}
 		if (!eleccionDuelo) opciones.push_back({ AC_CANCELAR, "Cancelar", true, "" });
+		else if (duelo->ef.repeticion.hay) opciones.push_back({ AC_PASAR, "No atacar", true, "" });   // (rama classic-reglas-oficiales: repeticion del ataque)
 		else if (duelo->ef.preg.opcional) opciones.push_back({ AC_PASAR, "No", true, "" });   // (rama classic-efectos: "puedes")
 		opcion = 0;
 		tMenu = 0.0f;
@@ -1420,6 +1422,7 @@ private:
 		case ia::V_ESPERA: return idioma::tr(e.ventana.lado == 1 ? "Fase de espera del rival" : "Tu fase de espera");   // rama classic-motor2
 		case ia::V_FIN_BATALLA: return idioma::tr("El rival termina la fase de batalla");
 		case ia::V_COLOCADO: return idioma::tr("El rival colocó un monstruo");
+		case ia::V_DANNO: return idioma::tr("Recibiste daño");   // (rama classic-reglas-oficiales)
 		default: return idioma::tr("¿Activar una carta?");
 		}
 	}

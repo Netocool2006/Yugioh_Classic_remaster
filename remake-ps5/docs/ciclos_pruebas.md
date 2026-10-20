@@ -41,3 +41,28 @@ También se corrigió el id de Blue-Eyes en la prueba de capturas del resultado 
 - Carta por carta: 1774 DATOS, 1774 CARAS, 1094 INVOCAR, 680 COLOCAR, 1385 EFECTO y 25 CAMPO, todas OK.
 - Las 2 DECISIÓN (repetición del ataque e Inferno Tempest) están en `decisiones_pendientes.md`.
 - No hizo falta arreglar nada más.
+
+# Ciclos de la rama classic-reglas-oficiales (las 2 decisiones con la regla oficial)
+
+El usuario eligió la opción B en las 2 decisiones de `decisiones_pendientes.md`: repetición del ataque con elección
+(otro objetivo, el mismo o no atacar) y ventana justo después del daño (`V_DANNO`) para Inferno Tempest, Attack and
+Receive y Numinous Healer. Los 2 casos DECISIÓN pasaron a pruebas normales y se agregaron casos de back, IA y front
+(`CU-BE-REPETICION-ATAQUE-*`, `CU-BE-VENTANA-DANNO-*`, `CU-FE-DUELO-REPETICION`, `CU-FE-DUELO-VENTANA-DANNO`).
+Antes del ciclo 1 se ajustaron 4 casos de `prueba_efectos.cpp` a la regla nueva (Attack and Receive y Numinous Healer
+se prueban en su ventana; Magician's Circle y Scapegoat responden la repetición).
+
+## Ciclo 1 (20-10-2026)
+
+**7016 casos: OK 7014, FALLA 2, DECISIÓN 0.**
+
+- `CU-FE-DUELO-INVOCAR` (y la prueba entera de casos de uso): el duelo del front usa una semilla por reloj; esta vez
+  el rival respondió a la invocación (Spear Dragon) y la sacó del campo. El juego estaba bien; la prueba pedía que el
+  monstruo siguiera en el campo. Ahora pide que la invocación se haga y que la mesa muestre lo mismo que el duelo.
+
+## Ciclo 2 (20-10-2026)
+
+**7016 casos: OK 7016, FALLA 0, DECISIÓN 0.** Se terminó ahí.
+
+- Certificación: 1385 cartas con efecto, OK 1385, FALLA 0, SIN PRUEBA 0.
+- IA humana contra clásica: 67,5 % de victorias (27 de 40); 14,2 ms medios por decisión, máximo 101 ms (presupuesto
+  ~150 ms).

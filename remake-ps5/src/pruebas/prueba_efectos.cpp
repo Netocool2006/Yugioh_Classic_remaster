@@ -92,6 +92,13 @@ struct Escena {
 		j.tipo = J_PASAR;
 		return d.aplicar(j);
 	}
+	bool noElige(int lado)   // (rama classic-reglas-oficiales: "puedes"/repeticion: no elegir)
+	{
+		if (d.ef.preg.tipo != P_ELEGIR || d.ef.preg.lado != lado || !d.ef.preg.opcional) return false;
+		Jugada j;
+		j.tipo = J_PASAR;
+		return d.aplicar(j);
+	}
 	bool elige(int lado, int k)
 	{
 		if (d.ef.preg.tipo != P_ELEGIR || d.ef.preg.lado != lado) return false;
@@ -635,6 +642,7 @@ static void tanda3()
 }
 
 // declara un ataque del lado 0 (zona a) contra la zona o del rival (-1 directo)
+static bool responderEnTurno(Escena& e, int lado, const Lugar& f, std::vector<Lugar> objs = {});   // (mas abajo)
 static bool atacar(Escena& e, int a, int o)
 {
 	Jugada at;
@@ -7130,9 +7138,12 @@ static void tanda7x()
 		VERIFICA(f.d.aplicar(j), "no cambio");
 		f.pasarTodo();
 		VERIFICA(f.d.l[1].monstruos() == 0, "Blade Rabbit");
-		Escena g;
-		g.d.danno(0, 100);
-		VERIFICA(usarColocada(g, 0, "attack_and_receive") && g.d.l[1].lp == LP_INICIAL - 700, "Attack and Receive");
+		Escena g(F_BATALLA);   // (rama classic-reglas-oficiales: solo en la ventana justo despues del danno)
+		g.d.activo = 1;
+		const int ga = g.mon(1, "celtic_guardian");
+		const int gar = g.colocar(0, "attack_and_receive");
+		VERIFICA(atacar(g, ga, -1), "no ataco");
+		VERIFICA(responderEnTurno(g, 0, MT(0, gar)) && g.d.l[1].lp == LP_INICIAL - 700, "Attack and Receive");
 		Escena h;
 		h.mano(0, "kuriboh");
 		const int k = h.mano(1, "raigeki");
@@ -7286,9 +7297,12 @@ static void tanda7z()
 		const int a = f.mon(0, "st_joan");
 		(void)a;
 		VERIFICA(usarColocada(f, 0, "solar_ray") && f.d.l[1].lp < LP_INICIAL, "Solar Ray");
-		Escena g;
-		g.d.danno(0, 100);
-		VERIFICA(usarColocada(g, 0, "numinous_healer") && g.d.l[0].lp == LP_INICIAL + 900, "Numinous");
+		Escena g(F_BATALLA);   // (rama classic-reglas-oficiales: solo en la ventana justo despues del danno)
+		g.d.activo = 1;
+		const int ga = g.mon(1, "celtic_guardian");
+		const int gnh = g.colocar(0, "numinous_healer");
+		VERIFICA(atacar(g, ga, -1), "no ataco");
+		VERIFICA(responderEnTurno(g, 0, MT(0, gnh)) && g.d.l[0].lp == LP_INICIAL - 1400 + 1000, "Numinous (LP %d)", g.d.l[0].lp);
 		Escena h;
 		const int m = h.mon(0, "kuriboh");
 		h.mon(1, "blue_eyes");
@@ -9766,8 +9780,12 @@ static void tandaProbador()
 		e.d.l[1].mazo.push_back("mystical_elf");
 		VERIFICA(atacar(e, a, -1), "no ataco");
 		VERIFICA(e.d.ef.preg.tipo == P_RESPUESTA && e.d.ef.preg.lado == 0 && e.activar(0, MT(0, mc)), "Magician's Circle no respondio");
-		e.pasarTodo();
+		for (int g = 0; g < 20 && e.d.ef.preg.tipo == P_RESPUESTA; g++) e.pasa(e.d.ef.preg.lado);
 		VERIFICA(buscarZona(e, 0, "mystical_elf") >= 0 && buscarZona(e, 1, "mystical_elf") >= 0, "no llegaron los dos");
+		// (rama classic-reglas-oficiales: aparecio un monstruo ante el ataque directo: repeticion del ataque)
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.repeticion.hay && e.d.ef.preg.lado == 1, "no hubo repeticion del ataque");
+		e.noElige(1);
+		e.pasarTodo();
 		fin();
 	}
 	{
@@ -11864,7 +11882,10 @@ static void tandaMotor2Ventanas()
 		const int sg = e.colocar(1, "scapegoat");
 		VERIFICA(atacar(e, a, -1), "no ataco");
 		VERIFICA(e.activar(1, MT(1, sg)), "Scapegoat no se activo");
-		e.pasarTodo();
+		for (int g = 0; g < 20 && e.d.ef.preg.tipo == P_RESPUESTA; g++) e.pasa(e.d.ef.preg.lado);
+		// (rama classic-reglas-oficiales: el atacante elige otro objetivo, el mismo o no atacar; aqui, no atacar)
+		VERIFICA(e.d.ef.preg.tipo == P_ELEGIR && e.d.ef.repeticion.hay && e.d.ef.preg.lado == 0 && e.d.ef.preg.cands.size() == 4, "no se pregunto la repeticion");
+		e.noElige(0);
 		VERIFICA(e.d.l[1].lp == LP_INICIAL && e.d.l[1].monstruos() == 4, "el ataque siguio (LP %d)", e.d.l[1].lp);
 		VERIFICA(e.d.puedeAtacar(0, a), "no puede volver a atacar (repeticion)");
 		VERIFICA(atacar(e, a, 0), "no pudo declarar el nuevo ataque");
@@ -12867,7 +12888,7 @@ static bool responderCon(Escena& e, int lado, const Lugar& f, std::vector<Lugar>
 }
 // el valor del n-esimo suceso S_MODIFICA con esa carta desde s0 (-99: ninguno)
 // lo mismo, pasando de fase el del turno hasta el final de su turno (las ventanas de respuesta de esas fases)
-static bool responderEnTurno(Escena& e, int lado, const Lugar& f, std::vector<Lugar> objs = {})
+static bool responderEnTurno(Escena& e, int lado, const Lugar& f, std::vector<Lugar> objs)
 {
 	const int turno = e.d.turno;
 	for (int g = 0; g < 8 && e.d.turno == turno && e.d.ganador < 0; g++) {

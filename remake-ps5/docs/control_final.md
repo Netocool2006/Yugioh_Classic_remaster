@@ -97,8 +97,8 @@ antes en prueba_duelo no volvió a salir: 40 duelos y 0 fallos.
 
 ## 6. Pendiente (aproximaciones conocidas, no son fallos)
 
-- **Inferno Tempest**: no hay una ventana de respuesta justo después del daño de batalla. Se puede activar en
-  cualquier ventana del mismo turno (por ejemplo, en la fase final del rival).
+- ~~**Inferno Tempest**: sin ventana justo después del daño~~: resuelto en la rama classic-reglas-oficiales (ventana
+  `V_DANNO`, ver `efectos.md`).
 - **Fairy Guardian** devuelve la última magia de tu cementerio. No comprueba que sea la que mandó el rival.
 - **Pitch-Black Power Stone** solo pasa contadores a monstruos tuyos que usan contadores de magia.
 - **Level Conversion Lab** elige el monstruo de la mano de más nivel. **Light of Judgment**: la IA elige la carta

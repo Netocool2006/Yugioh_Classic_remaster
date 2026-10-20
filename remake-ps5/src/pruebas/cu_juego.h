@@ -84,6 +84,7 @@ struct Juego {
 		float portadaNegro{ 0.0f };
 		std::string nombreCarta(const std::string& id) const { return id; }
 		void cambiarLP(bool rival, int v) { lps[rival ? 1 : 0] = v; }
+		void fijarLP(bool rival, int v) { lps[rival ? 1 : 0] = v; }   // (rama classic-visual-final)
 		int lp(bool rival) const { return lps[rival ? 1 : 0]; }
 		int mazos[3]{ -1, -1, -1 };
 		void contarMazos(int j, int r, int f) { mazos[0] = j, mazos[1] = r, mazos[2] = f; }
@@ -150,6 +151,7 @@ struct Juego {
 	// entrada_clave_juego.h (camara, figura y efectos de la entrada de una carta clave): maqueta
 	float empezarEntradaClave(const std::string&, int, int) { return 0.0f; }
 	void avanzarEntradaClave(float) {}
+	void pruebaCartaClave(float) {}   // (rama classic-visual-final: YUGI_CARTA_CLAVE, solo PC)
 #include "menu_principal.h"
 #include "cosmeticos_juego.h"
 #include "portada.h"

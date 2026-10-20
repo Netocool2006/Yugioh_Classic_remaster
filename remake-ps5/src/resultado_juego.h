@@ -318,6 +318,7 @@
 	float tPruebaResultado{ 0.0f };
 	void pruebaResultado(float dt)
 	{
+		pruebaCartaClave(dt);   // (rama classic-visual-final: YUGI_CARTA_CLAVE, entrada_clave_juego.h)
 		const char* e = getenv("YUGI_RESULTADO");
 		if (!e || ctl.vista.pantalla != VD::DUELO) return;
 		if (ctl.vista.sorteo) {
@@ -333,9 +334,17 @@
 		resultado::Resumen& r = resultado::resumen();
 		r.cartasUsadas += 7;
 		r.invocaciones += 3;
-		r.dannoHecho += m == "derrota" ? 2600 : 8000;
-		r.dannoRecibido += m == "derrota" ? 8000 : 3100;
+		// (rama classic-visual-final) el marcador de fondo coherente con el resumen: LP = 8000 - el danno de cada lado
+		// (0 el que pierde por LP), puestos de una vez en la mesa
+		const bool ganaLP = m == "victoria" || (m != "derrota" && m != "exodia" && m != "rendicion");
+		const int hecho = ganaLP ? 8000 : 2600, recibido = m == "derrota" ? 8000 : 3100;
+		r.dannoHecho += hecho;
+		r.dannoRecibido += recibido;
 		dannoPorCarta.push_back({ "blue_eyes", 6000 });
+		dueloIA.l[0].lp = std::max(0, ia::LP_INICIAL - recibido);
+		dueloIA.l[1].lp = std::max(0, ia::LP_INICIAL - hecho);
+		interfazDuelo.fijarLP(false, dueloIA.l[0].lp);
+		interfazDuelo.fijarLP(true, dueloIA.l[1].lp);
 		if (m == "rendicion") {
 			rendirse();
 		} else if (m == "exodia") {

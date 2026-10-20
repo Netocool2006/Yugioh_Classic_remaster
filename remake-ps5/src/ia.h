@@ -249,6 +249,8 @@ static const TextoIA TEXTOS_EFECTO[] = {
 	{ "ef.elegir.bloquear", "elige las zonas de monstruo del rival que no se podran usar", "choose the opponent's Monster Card Zones that cannot be used" },
 	{ "ef.elegir.descartar_tipo", "elige la carta del mismo tipo que descartas", "choose the card of the same type to discard" },
 	{ "ef.elegir.cambiar_posicion", "elige el monstruo del rival que cambia de posicion", "choose the opponent's monster to change its battle position" },
+	// rama classic-reglas-oficiales
+	{ "ef.elegir.repeticion", "cambiaron los monstruos del rival: elige a quién atacar (No: no atacar ahora)", "your opponent's monsters changed: choose the attack target (No: do not attack now)" },
 };
 inline const char* textoEfecto(const char* clave, bool ingles = false)
 {
@@ -678,7 +680,9 @@ enum TipoVentana { V_NINGUNA = 0, V_INVOCACION_NORMAL, V_VOLTEO, V_INVOCACION_ES
                    V_PASO_DANNO,       // paso de danno, antes del calculo: solo contraataques y las de ATK/DEF (Shrink...)
                    V_ESPERA,           // (rama classic-motor2) fase de espera: las cartas de la fase de espera (Curse of Fiend, Thunder of Ruler)
                    V_FIN_BATALLA,      // (rama classic-motor2) al terminar la fase de batalla (rapidas del rival)
-                   V_COLOCADO };       // (rama classic-motor2) el rival coloco un monstruo (Shadow of Eyes)
+                   V_COLOCADO,         // (rama classic-motor2) el rival coloco un monstruo (Shadow of Eyes)
+                   V_DANNO };          // (rama classic-reglas-oficiales) justo despues de recibir danno: solo el que lo recibio y
+                                       // solo las cartas "cuando recibes danno" (Attack and Receive, Numinous Healer, Inferno Tempest)
 struct Ventana {
 	int tipo{ V_NINGUNA }, lado{ 0 }, zona{ -1 }, uid{ 0 };   // quien lo hizo y (invocaciones) el monstruo
 	std::string carta;
@@ -708,7 +712,8 @@ struct Pregunta {
 	int faltan{ 0 };
 	bool opcional{ false };          // P_ELEGIR "puedes": J_PASAR no elige nada
 };
-enum Pendiente { PEND_NADA = 0, PEND_BATALLA, PEND_FIN_TURNO, PEND_CALCULO, PEND_ESPERA, PEND_FIN_BATALLA };   // (motor2: espera, fin de la batalla)
+enum Pendiente { PEND_NADA = 0, PEND_BATALLA, PEND_FIN_TURNO, PEND_CALCULO, PEND_ESPERA, PEND_FIN_BATALLA,   // (motor2: espera, fin de la batalla)
+                 PEND_DANNO };   // (rama classic-reglas-oficiales: tras la ventana del danno, sigue lo que esperaba: ef.pendienteDanno)
 struct EstadoEfectos {
 	std::vector<Eslabon> cadena, disparos;   // disparos: efectos que se dispararon y esperan su cadena
 	Pregunta preg;
@@ -720,7 +725,20 @@ struct EstadoEfectos {
 		bool hay{ false }, negado{ false };
 		int lado{ 0 }, zona{ -1 }, objetivo{ -1 }, uidA{ 0 }, uidO{ 0 };
 		bool directo{ false };   // (un efecto lo hizo directo: Toon Defense, Astral Barrier, Absolute End)
+		int nRival{ -1 };        // (rama classic-reglas-oficiales: monstruos del rival al declarar; si cambia, repeticion del ataque)
 	} ataque;
+	// rama classic-reglas-oficiales: la repeticion del ataque (cambio el numero de monstruos del rival tras declarar): el
+	// atacante elige otro objetivo, el mismo o no atacar (pregunta P_ELEGIR "ef.elegir.repeticion"; candidato con i = -1:
+	// ataque directo; J_PASAR: no atacar, y el monstruo puede volver a atacar en esta fase)
+	struct Repeticion {
+		bool hay{ false };
+		int lado{ 0 }, uidA{ 0 }, gasto{ 0 };
+	} repeticion;
+	// rama classic-reglas-oficiales: la ventana justo despues del danno (V_DANNO). dannoPend: ese lado recibio danno y aun no
+	// se le abrio su ventana; dannoPendBatalla: el mayor danno de batalla de un ataque en ese momento (Inferno Tempest)
+	std::array<int, 2> dannoPend{}, dannoPendBatalla{};
+	int dannoVentanaBatalla{ 0 };            // (el danno de batalla de la ventana abierta)
+	int pendienteDanno{ PEND_NADA };         // (lo que esperaba cuando se abrio la ventana del danno)
 	struct Calculo {                         // el combate en el paso de danno (tras su ventana: el calculo)
 		bool hay{ false }, estabaBocaAbajo{ false };
 		int yo{ 0 }, za{ -1 }, otro{ 1 }, zo{ -1 }, uidA{ 0 }, uidO{ 0 };
@@ -1025,6 +1043,7 @@ inline void motorAntesCalculoM2(Duelo& d, int lado, int za, int otro, int zo);
 inline bool motorPosicionFijaM2(const Duelo& d, int lado, int z);
 inline bool motorPuedeAtacarM2(const Duelo& d, int lado, int z);
 inline bool negadoPorEfectoM2(Duelo& d, Eslabon& e);
+inline bool abrirVentanaDanno(Duelo& d);
 
 class Duelo {
 public:
@@ -1121,6 +1140,8 @@ public:
 		ef.destruidosBatalla = {};
 		ef.destruidosCampo = {};
 		ef.desterradosCampo = {};
+		ef.dannoPend = {};   // (rama classic-reglas-oficiales: la ventana del danno no pasa de un turno a otro)
+		ef.dannoPendBatalla = {};
 		for (Lado& lx : l)
 			for (Monstruo& mx : lx.m) {
 				mx.directoTurno = false;
@@ -1168,6 +1189,74 @@ public:
 		if (ef.m2Repeticion == 2) a.ataquesExtra++;
 		else a.ataco = false;
 		ef.m2Repeticion = 0;
+	}
+	// (rama classic-reglas-oficiales) los objetivos posibles de la repeticion del ataque del monstruo (lado, za): primero el
+	// objetivo de antes (uidAntes) si sigue, luego los demas; {otro, EN_MONSTRUO, -1} = ataque directo
+	std::vector<Lugar> objetivosRepeticion(int lado, int za, int uidAntes) const
+	{
+		std::vector<Lugar> r;
+		const int otro = 1 - lado;
+		const Lado& y = l[(size_t)otro];
+		for (int o = 0; o < ZONAS; o++)
+			if (!y.m[(size_t)o].vacia() && y.m[(size_t)o].uid == uidAntes && uidAntes != 0 && motorAtacable(*this, otro, o)) r.push_back({ otro, EN_MONSTRUO, o });
+		for (int o = 0; o < ZONAS; o++)
+			if (!y.m[(size_t)o].vacia() && (y.m[(size_t)o].uid != uidAntes || uidAntes == 0) && motorAtacable(*this, otro, o)) r.push_back({ otro, EN_MONSTRUO, o });
+		if ((y.monstruos() == 0 || motorAtaqueDirecto(*this, lado, za)) && motorPuedeDirecto(*this, lado, za)) r.push_back({ otro, EN_MONSTRUO, -1 });
+		return r;
+	}
+	// (rama classic-reglas-oficiales) la repeticion del ataque: pregunta al atacante (otro objetivo, el mismo o no atacar)
+	void pedirRepeticion(Monstruo& a, int lado, int za, int uidAntes)
+	{
+		const std::vector<Lugar> cands = objetivosRepeticion(lado, za, uidAntes);
+		if (cands.empty() || ganador >= 0) {   // (no puede atacar a nada: no ataca; puede volver a declarar si cambia el campo)
+			repetirAtaque(a);
+			return;
+		}
+		ef.repeticion = EstadoEfectos::Repeticion{};
+		ef.repeticion.hay = true;
+		ef.repeticion.lado = lado;
+		ef.repeticion.uidA = a.uid;
+		ef.repeticion.gasto = ef.m2Repeticion;
+		Pregunta p;
+		p.tipo = P_ELEGIR;
+		p.lado = lado;
+		p.carta = a.id;
+		p.texto = "ef.elegir.repeticion";
+		p.cands = cands;
+		p.faltan = 1;
+		p.opcional = true;
+		ef.preg = p;
+	}
+	// (rama classic-reglas-oficiales) la respuesta a la repeticion: k = indice del objetivo, -1 = no atacar
+	bool responderRepeticion(int k)
+	{
+		const EstadoEfectos::Repeticion rp = ef.repeticion;
+		const std::vector<Lugar> cands = ef.preg.cands;
+		if (k >= (int)cands.size()) return false;
+		ef.repeticion = EstadoEfectos::Repeticion{};
+		ef.preg = Pregunta{};
+		int la = -1, za = -1;
+		Monstruo* a = porUid(rp.uidA, &la, &za);
+		ef.m2Repeticion = rp.gasto;
+		if (!a || la != rp.lado) return true;
+		if (k < 0) {   // no ataca: el monstruo puede volver a atacar en esta fase (la regla de la repeticion)
+			repetirAtaque(*a);
+			return true;
+		}
+		const Lugar g = cands[(size_t)k];
+		const Lado& y = l[(size_t)(1 - rp.lado)];
+		ef.ataque = EstadoEfectos::Ataque{};
+		ef.ataque.hay = true;
+		ef.ataque.lado = rp.lado;
+		ef.ataque.zona = za;
+		ef.ataque.objetivo = g.i;
+		ef.ataque.uidA = a->uid;
+		ef.ataque.uidO = g.i >= 0 ? y.m[(size_t)g.i].uid : 0;
+		ef.ataque.nRival = y.monstruos();
+		motorAtaqueDeclarado(*this);   // (Dreamsprite, Maiden with Eyes of Blue: una declaracion nueva)
+		suceso({ S_ATAQUE, rp.lado, za, ef.ataque.objetivo, 1, false, a->id });   // (valor 1: repeticion)
+		motorVentana(*this, Ventana{ V_ATAQUE, rp.lado, za, a->uid, a->id }, PEND_BATALLA);
+		return true;
 	}
 	// despues de la fase de espera: la principal 1 (o la batalla, con Timeater)
 	void continuarTurno()
@@ -1227,11 +1316,13 @@ public:
 			if (!efectos) return false;
 			const bool ok = motorJugada(*this, j);
 			recalcular();
+			if (ok && !ocupado()) abrirVentanaDanno(*this);   // (rama classic-reglas-oficiales)
 			return ok;
 		}
 		if (ocupado()) return false;   // primero la pregunta / la cadena
 		const bool ok = aplicarBasica(j);
 		recalcular();
+		if (ok && efectos && !ocupado()) abrirVentanaDanno(*this);   // (rama classic-reglas-oficiales: el danno de la jugada)
 		return ok;
 	}
 
@@ -1407,6 +1498,13 @@ public:
 		suceso({ S_DANNO, lado, -1, -1, n });
 		if (x.lp <= 0) terminar(1 - lado);
 	}
+	// (rama classic-reglas-oficiales) danno de batalla: lo anota para la ventana del danno (Inferno Tempest: 3000+ de un ataque)
+	void dannoDeBatalla(int lado, int n)
+	{
+		const int antes = l[(size_t)lado].lp;
+		danno(lado, n);
+		if (efectos && l[(size_t)lado].lp < antes) ef.dannoPendBatalla[(size_t)lado] = std::max(ef.dannoPendBatalla[(size_t)lado], n);
+	}
 	void ganarLP(int lado, int n)
 	{
 		if (n <= 0) return;
@@ -1507,19 +1605,22 @@ public:
 		c.za = za;
 		c.otro = otro;
 		c.uidA = at.uidA;
+		// (rama classic-reglas-oficiales) la repeticion del ataque: cambio el numero de monstruos del rival desde la declaracion
+		// (Scapegoat...), aparecio un monstruo ante un ataque directo o el objetivo ya no esta: el atacante elige
+		const bool cambio = efectos && !at.directo && at.nRival >= 0 && y.monstruos() != at.nRival;
 		if (at.objetivo < 0) {
-			if (y.monstruos() > 0 && !at.directo && !(efectos && motorAtaqueDirecto(*this, yo, za))) {   // (aparecio un monstruo: repeticion del ataque, motor2)
-				if (efectos) repetirAtaque(*a);
+			if (cambio || (y.monstruos() > 0 && !at.directo && !(efectos && motorAtaqueDirecto(*this, yo, za)))) {
 				ef.ataque = EstadoEfectos::Ataque{};
+				if (efectos) pedirRepeticion(*a, yo, za, 0);
 				return;
 			}
 			suceso({ S_COMBATE, yo, za, -1, 0, false, a->id });
 		} else {
 			int lo = -1, zo = -1;
 			Monstruo* d = porUid(at.uidO, &lo, &zo);
-			if (!d || lo != otro) {   // el objetivo ya no esta: repeticion del ataque (motor2: puede volver a atacar o no)
-				if (efectos) repetirAtaque(*a);
+			if (!d || lo != otro || cambio) {
 				ef.ataque = EstadoEfectos::Ataque{};
+				if (efectos) pedirRepeticion(*a, yo, za, d && lo == otro ? d->uid : 0);
 				return;
 			}
 			suceso({ S_COMBATE, yo, za, zo, 0, false, a->id });
@@ -1632,7 +1733,7 @@ public:
 		if (efectos && motorSinDannoBatalla(*this, yo, atacante)) return;   // (Emissary of the Oasis)
 		if (efectos && motorSantuario(*this, atacante)) return;   // (The Sanctuary in the Sky: el Hada atacante)
 		if (efectos && ultimoDefensor == "stone_statue_of_the_aztecs") n *= 2;
-		danno(efectos && atacante == "amazoness_swords_woman" ? 1 - yo : yo, n);
+		dannoDeBatalla(efectos && atacante == "amazoness_swords_woman" ? 1 - yo : yo, n);
 	}
 	// danno de batalla que el atacante (lado, zona) le hace al otro: y lo que dispara (Airknight Parshath)
 	void dannoBatalla(int lado, int z, int n)
@@ -1659,10 +1760,10 @@ public:
 		if (efectos && !ultimoDefensor.empty() && motorSinDannoBatalla(*this, 1 - lado, ultimoDefensor)) return;   // (Emissary of the Oasis)
 		if (efectos && motorSantuario(*this, ultimoDefensor)) return;   // (The Sanctuary in the Sky: el Hada defensora)
 		if (efectos && ef.calculo.hay == false && ef.ataque.hay == false && ultimoDefensor == "amazoness_swords_woman") {
-			danno(lado, n);   // (Amazoness Swords Woman: lo recibe el que ataca)
+			dannoDeBatalla(lado, n);   // (Amazoness Swords Woman: lo recibe el que ataca)
 			return;
 		}
-		danno(1 - lado, n);
+		dannoDeBatalla(1 - lado, n);
 		ef.ultimoDannoBatalla = n;
 		if (efectos && n > 0 && !m.vacia() && ganador < 0) motorDannoBatalla(*this, lado, z, m);
 	}
@@ -1957,6 +2058,7 @@ private:
 			ef.ataque.objetivo = j.objetivo;
 			ef.ataque.uidA = a.uid;
 			ef.ataque.uidO = j.objetivo >= 0 ? y.m[(size_t)j.objetivo].uid : 0;
+			ef.ataque.nRival = y.monstruos();
 			if (efectos) motorAtaqueDeclarado(*this);   // (Dreamsprite, Maiden with Eyes of Blue)
 			suceso({ S_ATAQUE, yo, j.zona, ef.ataque.objetivo, 0, false, a.id });
 			if (efectos) motorVentana(*this, Ventana{ V_ATAQUE, yo, j.zona, a.uid, a.id }, PEND_BATALLA);   // (Mirror Force...)
@@ -2078,6 +2180,7 @@ struct DefCarta {
 	bool unaPorTurno{ false }; // "solo puedes activar 1 por turno"
 	bool unaPorDuelo{ false }; // "solo 1 por duelo"
 	bool pasoDanno{ false };   // se puede activar en el paso de danno (modifica ATK/DEF: Shrink, Reinforcements...)
+	bool trasDanno{ false };   // (rama classic-reglas-oficiales) "cuando recibes danno": solo en la ventana V_DANNO
 	bool repetible{ false };   // boca arriba en su zona, se vuelve a activar (Ultimate Offering, Uniones equipadas)
 	bool unaVezRepetible{ false };
 	bool repetibleRespuesta{ false };  // (y boca arriba se puede volver a usar en respuesta: Jam Defender, Skull Lair)   // (y solo 1 vez por turno: Uniones)
@@ -2325,6 +2428,8 @@ inline bool anubisEnCampo(const Duelo& d)
 			if (arriba(m) && m.id == "the_end_of_anubis") return true;
 	return false;
 }
+// (rama classic-reglas-oficiales) la ventana justo despues del danno es la de este lado (cartas "cuando recibes danno")
+inline bool enVentanaDanno(const Duelo& d, int lado) { return d.ef.ventana.tipo == V_DANNO && d.ef.ventana.lado == lado; }
 // ---- se puede activar? "" = si; si no, la clave del motivo (textoEfecto)
 // comoRespuesta: en una ventana de respuesta (pregunta P_RESPUESTA o para saber si hay que preguntar)
 inline std::string motivoNoActivar(const Duelo& d, int lado, const Lugar& f, bool comoRespuesta)
@@ -2345,6 +2450,7 @@ inline std::string motivoNoActivar(const Duelo& d, int lado, const Lugar& f, boo
 	const int vel = velocidadDe(d, id, deMonstruo || (f.donde == EN_MANO && c->monstruo));   // (Kuriboh: efecto de monstruo desde la mano)
 	if (d.ef.ventana.tipo == V_ESPERA && d.ef.cadena.empty() && !esCartaEspera(id)) return "ef.no_momento";   // (rama classic-motor2: en la espera, solo las cartas de ese momento)
 	if (d.ef.ventana.tipo == V_COLOCADO && d.ef.cadena.empty() && id != "shadow_of_eyes") return "ef.no_momento";   // (rama classic-motor2: al colocar, solo Shadow of Eyes)
+	if (d.ef.ventana.tipo == V_DANNO && d.ef.cadena.empty() && !df->trasDanno) return "ef.no_momento";   // (rama classic-reglas-oficiales: tras el danno, solo esas cartas)
 	// el momento
 	if (comoRespuesta) {
 		const bool esperaPropia = d.ef.ventana.tipo == V_ESPERA && d.ef.cadena.empty() && d.activo == lado && id == "curse_of_fiend";   // (motor2: magia normal de tu fase de espera)
@@ -2488,6 +2594,7 @@ inline Lugar fuenteDe(const Jugada& j, int lado)
 // ---- la cadena
 inline void cerrarVentana(Duelo& d);
 inline void resolverCadena(Duelo& d);
+inline void seguirTrasCadena(Duelo& d);
 inline bool negadoPorEfecto(Duelo& d, Eslabon& e);
 // cada magia que resuelve pone un contador de magia (max 3) en Skilled White Magician / Skilled Dark Magician
 inline void contadorMagia(Duelo& d)
@@ -2649,6 +2756,14 @@ inline void resolverCadena(Duelo& d)
 		s.preg = Pregunta{};
 		return;
 	}
+	seguirTrasCadena(d);
+}
+// lo que sigue al terminar una cadena (o al cerrarse la ventana del danno): la ventana del danno, los disparos, la ventana
+// de la invocacion que hizo un eslabon y, al final, lo pendiente
+inline void seguirTrasCadena(Duelo& d)
+{
+	EstadoEfectos& s = d.ef;
+	if (abrirVentanaDanno(d)) return;   // (rama classic-reglas-oficiales: justo despues del danno)
 	if (!s.disparos.empty() && s.pendiente != PEND_CALCULO) {
 		s.ventana = Ventana{};
 		iniciarDisparos(d);
@@ -2664,6 +2779,45 @@ inline void resolverCadena(Duelo& d)
 	}
 	cerrarVentana(d);
 }
+// (rama classic-reglas-oficiales) la ventana justo despues del danno (de batalla o de efecto): se abre solo para el que lo
+// recibio (primero el del turno) y solo si tiene una carta "cuando recibes danno" que pueda activar (Attack and Receive,
+// Numinous Healer, Inferno Tempest). Si no, el momento pasa. true: quedo abierta (pregunta P_RESPUESTA a ese lado)
+inline bool abrirVentanaDanno(Duelo& d)
+{
+	EstadoEfectos& s = d.ef;
+	if (!d.efectos) return false;
+	if (d.ganador >= 0) {
+		s.dannoPend = {};
+		s.dannoPendBatalla = {};
+		return false;
+	}
+	if (s.preg.tipo != P_NADA || !s.cadena.empty() || s.resolviendo) return false;
+	for (int k = 0; k < 2; k++) {
+		const int lado = k == 0 ? d.activo : 1 - d.activo;
+		if (!s.dannoPend[(size_t)lado]) continue;
+		const int batalla = s.dannoPendBatalla[(size_t)lado];
+		s.dannoPend[(size_t)lado] = 0;
+		s.dannoPendBatalla[(size_t)lado] = 0;
+		const Ventana antes = s.ventana;
+		const int batallaAntes = s.dannoVentanaBatalla;
+		s.ventana = Ventana{ V_DANNO, lado, -1, 0, {} };
+		s.dannoVentanaBatalla = batalla;
+		if (activables(d, lado, true).empty()) {
+			s.ventana = antes;
+			s.dannoVentanaBatalla = batallaAntes;
+			continue;
+		}
+		if (s.pendiente != PEND_DANNO) s.pendienteDanno = s.pendiente;   // (anidada: se queda lo que esperaba la primera)
+		s.pendiente = PEND_DANNO;
+		s.pases = 0;
+		s.pasoDannoSegundo = false;
+		s.preg = Pregunta{};
+		s.preg.tipo = P_RESPUESTA;
+		s.preg.lado = lado;
+		return true;
+	}
+	return false;
+}
 inline void cerrarVentana(Duelo& d)
 {
 	EstadoEfectos& s = d.ef;
@@ -2673,6 +2827,13 @@ inline void cerrarVentana(Duelo& d)
 	if (d.ganador >= 0) return;
 	const int p = s.pendiente;
 	s.pendiente = PEND_NADA;
+	if (p == PEND_DANNO) {   // (rama classic-reglas-oficiales: se cerro la ventana del danno: sigue lo que esperaba)
+		s.pendiente = s.pendienteDanno;
+		s.pendienteDanno = PEND_NADA;
+		s.dannoVentanaBatalla = 0;
+		seguirTrasCadena(d);
+		return;
+	}
 	if (motorNekoM2(d, p)) return;   // (rama classic-motor2: Neko Mane King pidio la fase final)
 	if (motorDiosaTiempo(d, p)) return;   // (Mischief of the Time Goddess: salta a tu proxima batalla)
 	if (p == PEND_BATALLA) {
@@ -2691,6 +2852,7 @@ inline void cerrarVentana(Duelo& d)
 		}
 		s.devolverMano.clear();
 		d.recalcular();
+		if (abrirVentanaDanno(d)) return;   // (rama classic-reglas-oficiales: justo despues del danno de batalla)
 		if (!s.disparos.empty() && s.preg.tipo == P_NADA && s.cadena.empty() && s.pendiente == PEND_NADA)
 			motorVentana(d, Ventana{ V_DISPARO, d.activo, -1, 0, {} });
 	} else if (p == PEND_FIN_TURNO) {
@@ -2898,6 +3060,11 @@ inline bool motorJugada(Duelo& d, const Jugada& j)
 {
 	EstadoEfectos& s = d.ef;
 	if (d.ganador >= 0) return false;
+	if (s.preg.tipo == P_ELEGIR && s.repeticion.hay) {   // (rama classic-reglas-oficiales: la repeticion del ataque)
+		if (j.tipo == J_PASAR) return d.responderRepeticion(-1);
+		if (j.tipo != J_ELEGIR || j.objetivo < 0 || j.objetivo >= (int)s.preg.cands.size()) return false;
+		return d.responderRepeticion(j.objetivo);
+	}
 	if (s.preg.tipo == P_ELEGIR) {
 		if (j.tipo == J_PASAR && s.preg.opcional && !s.cadena.empty()) {   // ("puedes": no elige)
 			s.preg = Pregunta{};
@@ -3797,6 +3964,25 @@ inline int elegirIA(const Duelo& d, int lado)
 				return r < 0 && p.opcional ? -1 : std::max(0, std::min((int)p.cands.size() - 1, r));   // (-1: no elegir)
 			}
 	if (p.texto == "ef.elegir.defensa") return mejorEnDefensa(d, cartaEn(d, p.cands[0])) ? 0 : -1;   // (posicion: -1 = ataque)
+	if (d.ef.repeticion.hay) {   // (rama classic-reglas-oficiales: repeticion del ataque, sin personalidad: lo que gana; -1 = no atacar)
+		const Monstruo* a = d.porUid(d.ef.repeticion.uidA);
+		if (!a) return -1;
+		const int pa = d.atkM(*a);
+		int mejor = -1;
+		float vm = 0.0f;
+		for (int k = 0; k < (int)p.cands.size(); k++) {
+			const Lugar& g = p.cands[(size_t)k];
+			float v;
+			if (g.i < 0) v = (float)pa;
+			else {
+				const Monstruo& o = d.l[(size_t)g.lado].m[(size_t)g.i];
+				const int po = o.bocaAbajo && !o.visto ? 1500 : o.defensa ? d.defM(o) : d.atkM(o);
+				v = pa > po ? 450.0f + (o.defensa ? 0.0f : (float)(pa - po)) : -1.0f;
+			}
+			if (v > vm) vm = v, mejor = k;
+		}
+		return mejor;
+	}
 	const bool malo = p.texto == "ef.elegir.descartar" || p.texto == "ef.elegir.sacrificar";   // (lo propio que menos vale)
 	const bool contra = p.texto == "ef.elegir.destruir" || p.texto == "ef.elegir.devolver" || p.texto == "ef.elegir.voltear";   // (mejor del rival)
 	int mejor = 0;
@@ -17343,16 +17529,20 @@ inline void cartasTanda7x(TablaCartas& t)
 			return m->atkEf <= a->atkEf && m->atkEf + n > a->atkEf ? 600.0f : -100.0f;
 		};
 	}
-	{   // Attack and Receive (trampa): si recibiste danno este turno: 700 al rival + 300 por cada Attack and Receive en tu
-	    // cementerio (atajo: en cualquier momento de ese turno)
+	{   // Attack and Receive (trampa): cuando recibes danno: 700 al rival + 300 por cada Attack and Receive en tu cementerio
+	    // (rama classic-reglas-oficiales: solo en la ventana justo despues del danno, V_DANNO)
 		DefCarta& c = def("attack_and_receive");
 		c.danna = true;
-		c.condicion = [](const Duelo& d, int lado, const Lugar&) { return d.ef.dannoRecibido[(size_t)lado] == d.turno; };
+		c.trasDanno = true;
+		c.condicion = [](const Duelo& d, int lado, const Lugar&) { return enVentanaDanno(d, lado); };
 		c.resolver = [](Duelo& d, Eslabon& e) {
 			const auto& cem = d.l[(size_t)e.lado].cementerio;
 			dannoEfecto(d, e, 1 - e.lado, 700 + 300 * (int)std::count(cem.begin(), cem.end(), "attack_and_receive"));
 		};
-		c.valor = [](const Duelo&, int, const std::vector<Lugar>&) { return 300.0f; };
+		c.valor = [](const Duelo& d, int lado, const std::vector<Lugar>&) {   // (solo se puede ahora: usarla o perderla)
+			const auto& cem = d.l[(size_t)lado].cementerio;
+			return 420.0f + 100.0f * (float)std::count(cem.begin(), cem.end(), "attack_and_receive");
+		};
 	}
 	{   // Blade Rabbit: al pasar de ataque a defensa boca arriba, destruye uno del rival (atajo: el mas fuerte)
 		DefCarta& c = def("blade_rabbit");
@@ -17451,7 +17641,10 @@ inline std::vector<Lugar> magiasPerdidasEnCementerio(const Duelo& d, int lado)
 // sucesos de la tanda X
 inline void motorSucesoX(Duelo& d, const Suceso& s)
 {
-	if (s.tipo == S_DANNO && s.zona2 != 1) d.ef.dannoRecibido[(size_t)s.lado] = d.turno;   // (Attack and Receive)
+	if (s.tipo == S_DANNO && s.zona2 != 1) {
+		d.ef.dannoRecibido[(size_t)s.lado] = d.turno;
+		d.ef.dannoPend[(size_t)s.lado] = 1;   // (rama classic-reglas-oficiales: su ventana V_DANNO, en el proximo momento libre)
+	}
 }
 
 // ---- tanda 7 (Y): las ultimas de los mazos (Dice Re-Roll, Gravekeeper's Watcher, Great Dezard, Union Rider, Valkyrie
@@ -18216,15 +18409,18 @@ inline void cartasTanda7z(TablaCartas& t)
 			dannoEfecto(d, e, 1 - e.lado, 600 * n);
 		};
 		s.valor = [](const Duelo&, int, const std::vector<Lugar>&) { return 300.0f; };
-		// Numinous Healer (trampa): si recibiste danno este turno: +1000 y +500 por cada Numinous Healer en tu cementerio
-		// (atajo: en cualquier momento de ese turno)
+		// Numinous Healer (trampa): cuando recibes danno: +1000 y +500 por cada Numinous Healer en tu cementerio
+		// (rama classic-reglas-oficiales: solo en la ventana justo despues del danno, V_DANNO)
 		DefCarta& h = def("numinous_healer");
-		h.condicion = [](const Duelo& d, int lado, const Lugar&) { return d.ef.dannoRecibido[(size_t)lado] == d.turno; };
+		h.trasDanno = true;
+		h.condicion = [](const Duelo& d, int lado, const Lugar&) { return enVentanaDanno(d, lado); };
 		h.resolver = [](Duelo& d, Eslabon& e) {
 			const auto& cem = d.l[(size_t)e.lado].cementerio;
 			d.ganarLP(e.lado, 1000 + 500 * (int)std::count(cem.begin(), cem.end(), "numinous_healer"));
 		};
-		h.valor = [](const Duelo&, int, const std::vector<Lugar>&) { return 200.0f; };
+		h.valor = [](const Duelo& d, int lado, const std::vector<Lugar>&) {   // (solo se puede ahora: usarla o perderla)
+			return d.l[(size_t)lado].lp <= 3000 ? 520.0f : 400.0f;
+		};
 	}
 	{   // Rush Recklessly (rapida): +700 ATK este turno; Secret Pass to the Treasures: uno tuyo de 1000 o menos ATK ataca
 	    // directo este turno
@@ -19601,9 +19797,11 @@ inline void cartasTanda7ab(TablaCartas& t)
 		g.modDef = g.modAtk;
 		g.valor = [](const Duelo& d, int lado, const std::vector<Lugar>& o) { return valorDelta(d, lado, o, 500); };
 	}
-	{   // Inferno Tempest (rapida): si recibiste 3000+ de un ataque: destierra los monstruos de mazos y cementerios
+	{   // Inferno Tempest (rapida): cuando recibes 3000+ de danno de batalla de un ataque: destierra los monstruos de mazos y
+	    // cementerios (rama classic-reglas-oficiales: solo en la ventana justo despues de ese danno, V_DANNO)
 		DefCarta& c = def("inferno_tempest");
-		c.condicion = [](const Duelo& d, int lado, const Lugar&) { return d.ef.dannoRecibido[(size_t)lado] == d.turno && d.ef.ultimoDannoBatalla >= 3000 && d.activo != lado; };
+		c.trasDanno = true;
+		c.condicion = [](const Duelo& d, int lado, const Lugar&) { return enVentanaDanno(d, lado) && d.ef.dannoVentanaBatalla >= 3000; };
 		c.resolver = [](Duelo& d, Eslabon&) {
 			for (Lado& x : d.l)
 				for (auto* v : { &x.mazo, &x.cementerio })
@@ -19613,7 +19811,14 @@ inline void cartasTanda7ab(TablaCartas& t)
 							v->erase(v->begin() + i);
 						}
 		};
-		c.valor = [](const Duelo&, int, const std::vector<Lugar>&) { return 100.0f; };
+		c.valor = [](const Duelo& d, int lado, const std::vector<Lugar>&) {   // (los monstruos que pierde cada uno: mazo y cementerio)
+			int mios = 0, suyos = 0;
+			for (int a = 0; a < 2; a++)
+				for (const auto* v : { &d.l[(size_t)a].mazo, &d.l[(size_t)a].cementerio })
+					for (const std::string& id : *v)
+						if (d.carta(id) && d.carta(id)->monstruo) (a == lado ? mios : suyos)++;
+			return 150.0f + 25.0f * (float)(suyos - mios);
+		};
 		// Dragged Down into the Grave: cada uno descarta la mejor carta del otro (atajo) y roban 1
 		DefCarta& g = def("dragged_down_into_the_grave");
 		g.condicion = [](const Duelo& d, int lado, const Lugar& f) {
@@ -27088,7 +27293,7 @@ public:
 		Jugada j;
 		if (d.ef.preg.tipo == P_ELEGIR) {
 			j.tipo = J_ELEGIR;
-			j.objetivo = elegirIA(d, yo);
+			j.objetivo = d.ef.repeticion.hay ? elegirRepeticion(d) : elegirIA(d, yo);   // (repeticion del ataque: su politica de ataque)
 			if (j.objetivo < 0) j.tipo = d.ef.preg.opcional ? J_PASAR : J_ELEGIR, j.objetivo = std::max(0, j.objetivo);
 			j.pensar = 0.5f + 0.6f * azar.uno();
 			return j;
@@ -27411,6 +27616,16 @@ private:
 		const bool letal = y.monstruos() == 0 && directo >= y.lp;
 		for (int z = 0; z < ZONAS; z++) {
 			if (!d.puedeAtacar(yo, z)) continue;
+			ataquesDe(d, yo, z, letal, mi, c);
+		}
+	}
+	// los ataques posibles del monstruo (yo, z) con sus puntos (batalla y la repeticion del ataque)
+	void ataquesDe(const Duelo& d, int yo, int z, bool letal, float mi, std::vector<Jugada>& c)
+	{
+		const Lado& x = d.l[(size_t)yo];
+		const int otro = 1 - yo;
+		const Lado& y = d.l[(size_t)otro];
+		{
 			const Monstruo& a = x.m[(size_t)z];
 			const int pa = d.atkM(a);
 			const float yoVal = valorPropio(d, a);
@@ -27426,7 +27641,7 @@ private:
 				j.frase = pa >= 2000 || letal ? "ia.frase.directo" : nullptr;
 				c.push_back(j);
 			}
-			if (y.monstruos() == 0) continue;
+			if (y.monstruos() == 0) return;
 			for (int o = 0; o < ZONAS; o++) {
 				const Monstruo& m = y.m[(size_t)o];
 				if (m.vacia() || (d.efectos && !motorAtacable(d, otro, o))) continue;
@@ -27455,6 +27670,37 @@ private:
 				c.push_back(j);
 			}
 		}
+	}
+	// (rama classic-reglas-oficiales) la repeticion del ataque: los mismos puntos que al declarar (con el plan) y la
+	// referencia "no atacar" (0, como pasar de fase: el monstruo puede volver a atacar). Devuelve el candidato o -1
+	int elegirRepeticion(const Duelo& d)
+	{
+		const Pregunta& q = d.ef.preg;
+		const int yo = q.lado;
+		int la = -1, za = -1;
+		const Monstruo* a = d.porUid(d.ef.repeticion.uidA, &la, &za);
+		if (!a || la != yo) return -1;
+		const Lado& y = d.l[(size_t)(1 - yo)];
+		const bool letal = y.monstruos() == 0 && d.atkM(*a) >= y.lp;
+		std::vector<Jugada> c;
+		ataquesDe(d, yo, za, letal, miedo(d, 1 - yo), c);
+		Jugada pasar;
+		pasar.tipo = J_FASE;
+		c.push_back(pasar);
+		ajustarPlan(d, yo, c, plan);
+		const float r = ruido();
+		int mejor = -1;
+		float vm = c.back().puntos;   // (no atacar)
+		for (const Jugada& j : c) {
+			if (j.tipo != J_ATACAR) continue;
+			int k = -1;
+			for (int i = 0; i < (int)q.cands.size(); i++)
+				if (q.cands[(size_t)i].i == j.objetivo) k = i;
+			if (k < 0) continue;
+			const float v = j.puntos + azar.normal() * r * 0.5f;
+			if (v > vm) vm = v, mejor = k;
+		}
+		return mejor;
 	}
 
 	Jugada descartar(const Duelo& d, int yo)
